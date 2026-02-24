@@ -31,7 +31,7 @@ MODEL_NAME = "M20"
 CURRENT_DIR = Path(__file__).resolve().parent
 
 # Define the XML path relative to the Python file
-XML_PATH = CURRENT_DIR / ".." / ".." / ".." / "model" / "M20" / "mjcf" / "M20.xml"
+XML_PATH = CURRENT_DIR / ".." / ".." / ".." / "M20_description" / "m20_mjcf" / "mjcf" / "M20_stair.xml"
 
 # Convert to absolute path as string
 XML_PATH = str(XML_PATH.resolve())
