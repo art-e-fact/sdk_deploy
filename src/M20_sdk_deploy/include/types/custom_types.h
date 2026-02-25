@@ -15,6 +15,7 @@ namespace types{
         WaitingForStand = 0,
         StandingUp      = 1,
         JointDamping    = 2,
+        LieDown         = 4,
         RLControlMode   = 6,
     };
 
@@ -23,13 +24,22 @@ namespace types{
         kIdle         = 0,
         kStandUp      = 1,
         kJointDamping = 2,
+        kLieDown      = 4,
         kRLControl    = 6,
     };
 
     enum RemoteCommandType{
         kKeyBoard = 0,
+        kGamepad,
     };
     
+    enum KeyCode {
+        L1,
+        L2,
+        R1,
+        R2,
+        UNKNOWN
+    };
 
     inline std::string GetAbsPath(){
         char buffer[PATH_MAX];

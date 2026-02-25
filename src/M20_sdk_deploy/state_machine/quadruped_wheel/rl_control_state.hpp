@@ -20,7 +20,10 @@
 namespace qw {
     class RLControlState : public StateBase {
     private:
-        RobotBasicState rbs_;
+        RobotBasicState rbs_[2];
+        std::atomic<int> rbs_write_index_{0};
+        int getrbsReadIndex() const { return 1 - rbs_write_index_.load(std::memory_order_acquire); }
+
         int state_run_cnt_;
 
         std::shared_ptr<PolicyRunnerBase> policy_ptr_;
@@ -34,33 +37,33 @@ namespace qw {
         Eigen::MatrixXf acc_rot = Eigen::MatrixXf::Zero(20, 3);
         int acc_rot_count = 0;
 
-        void init_rbs_() {
-            rbs_.flt_base_acc_mat = Eigen::MatrixXf::Zero(20, 3);
-        }
-
         void UpdateRobotObservation() {
-            rbs_.base_rpy = ri_ptr_->GetImuRpy();
-            rbs_.base_rot_mat = RpyToRm(rbs_.base_rpy);
-            rbs_.base_omega = ri_ptr_->GetImuOmega();
-            rbs_.base_acc = ri_ptr_->GetImuAcc();
-            rbs_.joint_pos = ri_ptr_->GetJointPosition();
-            rbs_.joint_vel = ri_ptr_->GetJointVelocity();
-            rbs_.joint_tau = ri_ptr_->GetJointTorque();
+            int write_idx = rbs_write_index_.load(std::memory_order_relaxed);
+            RobotBasicState& buffer = rbs_[write_idx];
+
+            buffer.base_rpy = ri_ptr_->GetImuRpy();
+            buffer.base_rot_mat = RpyToRm(buffer.base_rpy);
+            buffer.base_omega = ri_ptr_->GetImuOmega();
+            buffer.base_acc = ri_ptr_->GetImuAcc();
+            buffer.joint_pos = ri_ptr_->GetJointPosition();
+            buffer.joint_vel = ri_ptr_->GetJointVelocity();
+            buffer.joint_tau = ri_ptr_->GetJointTorque();
 
             // 储存
-            rbs_.flt_base_acc_mat.row(acc_rot_count) = rbs_.base_acc.transpose();
+            buffer.flt_base_acc_mat.row(acc_rot_count) = buffer.base_acc.transpose();
             acc_rot_count += 1;
             acc_rot_count = acc_rot_count % 20;
+
+            rbs_write_index_.store(1 - write_idx,  std::memory_order_release);
         }
 
         void PolicyRunner() {
             int run_cnt_record = -1;
             while (start_flag_) {
-
                 if (state_run_cnt_ % policy_ptr_->decimation_ == 0 && state_run_cnt_ != run_cnt_record) {
                     timespec start_timestamp, end_timestamp;
                     clock_gettime(CLOCK_MONOTONIC, &start_timestamp);
-                    auto ra = policy_ptr_->getRobotAction(rbs_, *(uc_ptr_->GetUserCommand()));
+                    auto ra = policy_ptr_->getRobotAction(rbs_[getrbsReadIndex()], *(uc_ptr_->GetUserCommand()));
                     
                     MatXf res = ra.ConvertToMat();
 
@@ -78,7 +81,6 @@ namespace qw {
     public:
         RLControlState(const RobotName &robot_name, const std::string &state_name,
                        std::shared_ptr<ControllerData> data_ptr) : StateBase(robot_name, state_name, data_ptr) {
-            std::memset(&rbs_, 0, sizeof(rbs_));
             if (robot_name_ == RobotName::M20) {
                 namespace fs = std::filesystem;
                 fs::path base = fs::path(__FILE__).parent_path();
@@ -92,7 +94,6 @@ namespace qw {
                 exit(0);
             }
             policy_ptr_->DisplayPolicyInfo();
-            init_rbs_();
         }
 
         ~RLControlState() {}
@@ -101,7 +102,7 @@ namespace qw {
             state_run_cnt_ = -1;
             start_flag_ = true;
             run_policy_thread_ = std::thread(std::bind(&RLControlState::PolicyRunner, this));
-            policy_ptr_->OnEnter(rbs_);
+            policy_ptr_->OnEnter();
             StateBase::msfb_.UpdateCurrentState(RobotMotionState::RLControlMode);
         };
 
@@ -131,7 +132,11 @@ namespace qw {
         }
 
         virtual StateName GetNextStateName() {
-            if (uc_ptr_->GetUserCommand()->safe_control_mode != 0) return StateName::kJointDamping;
+            if (uc_ptr_->GetUserCommand()->safe_control_mode != 0) 
+                return StateName::kJointDamping;
+            if (uc_ptr_->GetUserCommand()->target_mode == uint8_t(RobotMotionState::LieDown))
+                return StateName::kLieDown;
+            
             return StateName::kRLControl;
         }
     };

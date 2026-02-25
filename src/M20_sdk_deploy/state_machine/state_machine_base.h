@@ -114,7 +114,7 @@ public:
 
         while (rclcpp::ok() && !shutdown_requested_) {
             if (set_timer.time_interrupt()) {
-                                ri_ptr_->RefreshRobotData();
+                ri_ptr_->RefreshRobotData();
                 rclcpp::spin_some(ri_ptr_->get_node());
 
                 current_controller_->Run();

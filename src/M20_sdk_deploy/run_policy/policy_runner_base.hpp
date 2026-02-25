@@ -40,7 +40,7 @@ public:
     /**
      * @brief execute function when first entering policy runner
      */
-    virtual void OnEnter(const RobotBasicState&) = 0;
+    virtual void OnEnter() = 0;
 
     /**
      * @brief Set the decimation

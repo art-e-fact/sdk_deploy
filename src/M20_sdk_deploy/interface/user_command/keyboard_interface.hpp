@@ -97,13 +97,19 @@ private:
             usr_cmd_->target_mode = uint8_t(RobotMotionState::JointDamping);
             std::cout << "[MODE] Joint Damping\n";
         }
-        else if (k == 'z' && msfb_->GetCurrentState() == RobotMotionState::WaitingForStand) {
+        else if (k == 'z' && (msfb_->GetCurrentState() == RobotMotionState::WaitingForStand
+            || msfb_->GetCurrentState() == RobotMotionState::LieDown)) {
             usr_cmd_->target_mode = uint8_t(RobotMotionState::StandingUp);
             std::cout << "[MODE] Standing Up\n";
         }
         else if (k == 'c' && msfb_->GetCurrentState() == RobotMotionState::StandingUp) {
             usr_cmd_->target_mode = uint8_t(RobotMotionState::RLControlMode);
             std::cout << "[MODE] RL Control\n";
+        }
+        else if (k == 'x' && (msfb_->GetCurrentState() == RobotMotionState::StandingUp 
+            || msfb_->GetCurrentState() == RobotMotionState::RLControlMode)) {
+            usr_cmd_->target_mode = uint8_t(RobotMotionState::LieDown);
+            std::cout << "[MODE] Lie Down\n";
         }
     }
 
@@ -130,7 +136,7 @@ private:
                 char k = std::tolower(static_cast<unsigned char>(ch));
 
                 // Handle mode commands
-                if (k == 'r' || k == 'z' || k == 'c') {
+                if (k == 'r' || k == 'z' || k == 'c' || k == 'x') {
                     process_mode_command(k);
                     continue;
                 }

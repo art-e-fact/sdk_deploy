@@ -16,8 +16,10 @@
 #include "quadruped_wheel/standup_state.hpp"
 #include "quadruped_wheel/joint_damping_state.hpp"
 #include "quadruped_wheel/rl_control_state.hpp"
+#include "quadruped_wheel/liedown_state.hpp"
 #include "keyboard_interface.hpp"
 #include "hardware/m20_interface.hpp"
+#include "udp_server.hpp"
 
 namespace qw{
 class QwStateMachine : public StateMachineBase{
@@ -28,6 +30,9 @@ private:
     std::shared_ptr<StateBase> rl_controller_;
     std::shared_ptr<StateBase> joint_damping_controller_;
     std::shared_ptr<StateBase> car_move_controller_;
+    std::shared_ptr<StateBase> liedown_controller_;
+
+    std::shared_ptr<UdpServer> udp_server_;
 
 public:
     const RobotName robot_name_;
@@ -41,6 +46,10 @@ public:
     void Start(){
         if(remote_cmd_type_ == RemoteCommandType::kKeyBoard){
             uc_ptr_ = std::make_shared<KeyboardInterface>(robot_name_);
+        }else if(remote_cmd_type_ == RemoteCommandType::kGamepad){
+            auto gp_ptr = std::make_shared<GamepadInterface>(robot_name_);
+            udp_server_ = std::make_shared<UdpServer>(gp_ptr.get());
+            uc_ptr_ = gp_ptr;
         }else{
             std::cerr << "error user command interface! " << std::endl;
             exit(0);
@@ -67,6 +76,7 @@ public:
         standup_controller_ = std::make_shared<StandUpState>(robot_name_, "standup_state", data_ptr);
         rl_controller_ = std::make_shared<RLControlState>(robot_name_, "rl_control", data_ptr);
         joint_damping_controller_ = std::make_shared<JointDampingState>(robot_name_, "joint_damping", data_ptr);
+        liedown_controller_ = std::make_shared<LieDownState>(robot_name_, "liedown_state", data_ptr);
 
         current_controller_ = idle_controller_;
         current_state_name_ = kIdle;
@@ -95,6 +105,10 @@ public:
             }
             case StateName::kJointDamping:{
                 return joint_damping_controller_;
+            }
+            case StateName::kLieDown:
+            {
+                return liedown_controller_;
             }
             default:{
                 std::cerr << "error state name" << std::endl;

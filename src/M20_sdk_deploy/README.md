@@ -107,7 +107,7 @@ python3 src/M20_sdk_deploy/interface/robot/simulation/mujoco_simulation_ros2.py
 
 
 # Sim-to-Real
-This process is almost identical to simulation-simulation. You only need to add the step of connecting to Wi-Fi to transfer data, and then modify the compilation instructions. The default control mode is currently set to keyboard mode. We will be adding controller support in future updates. Stay tuned.
+This process is almost identical to simulation-simulation. You only need to add the step of connecting to Wi-Fi to transfer data, and then modify the compilation instructions.Real-robot control is divided into keyboard mode and gamepad control mode. You need to modify the RemoteCommandType parameter in the main function to select the desired mode.
 
 
 Please first use the OTA upgrade function in the handle settings to upgrade the hardware to version 1.1.7.
@@ -139,11 +139,22 @@ ros2 run m20_sdk_deploy rl_deploy
 
 # exit sdk mode：
 ros2 service call /SDK_MODE drdds/srv/StdSrvInt32 command:\ 0
+```
 
-# keyboard control
-Note: When the robot dog stands up, it may become stuck due to self-collision in the simulation. This is not a bug; please try again.
+### ⌨️ Keyboard Control
+*(Note: When the robot dog stands up, it may become stuck due to self-collision in the simulation. This is not a bug; please try again.)*
 - z： default position
 - c： rl control default position
+- x： lie down
 - wasd：forward/leftward/backward/rightward
 - qe：clockwise/counter clockwise
-```
+
+### 🎮 Gamepad Control
+*(Note: When using the gamepad control function, please ensure that the Gamepad APP version is V1.5.11 or higher.)*
+- L1： default position
+- L2： rl control default position
+- R1： lie down
+- R2： joint damping
+- Left joystick：forward/leftward/backward/rightward
+- Right joystick：clockwise/counter clockwise
+

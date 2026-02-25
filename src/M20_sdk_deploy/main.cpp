@@ -14,8 +14,11 @@ MotionStateFeedback StateBase::msfb_ = MotionStateFeedback();
 int main(){
     std::cout << "State Machine Start Running" << std::endl;
     rclcpp::init(0, 0);
-    std::shared_ptr<StateMachineBase> fsm = std::make_shared<qw::QwStateMachine>(RobotName::M20, 
-        RemoteCommandType::kKeyBoard);
+    //KeyBoard control
+    std::shared_ptr<StateMachineBase> fsm = std::make_shared<qw::QwStateMachine>(RobotName::M20, RemoteCommandType::kKeyBoard);
+    //Gamepad control
+    // std::shared_ptr<StateMachineBase> fsm = std::make_shared<qw::QwStateMachine>(RobotName::M20, RemoteCommandType::kGamepad);
+    
     fsm->Start();
     fsm->Run();
     fsm->Stop();

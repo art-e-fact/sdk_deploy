@@ -90,6 +90,15 @@ public:
     virtual void Stop() {
     }
 
+    /**
+     * Sends joint commands to the robot.
+     * Input matrix layout: [dof × 5] → [kp, pos, kd, vel, torque_ff]
+     * 
+     * ⚠ Torque values (column 4) are protected by low-level hardware torque limits
+     *    → commands exceeding limits are saturated at the firmware/hardware level
+     * 
+     * Joints with index % 4 == 3 have kp forced to 0 (velocity/torque mode)
+     */
     virtual void SetJointCommand(Eigen::Matrix<float, Eigen::Dynamic, 5> input) {
         auto msg = drdds::msg::JointsDataCmd();
         for (int i = 0; i < dof_num_; ++i) {

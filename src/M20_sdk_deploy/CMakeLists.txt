@@ -34,6 +34,7 @@ include_directories(
   include/utils
   interface/robot
   interface/user_command
+  interface/network
   state_machine
   run_policy
   ${THIRD_PARTY}/eigen/

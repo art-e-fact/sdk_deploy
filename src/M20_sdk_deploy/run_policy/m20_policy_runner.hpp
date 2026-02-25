@@ -164,7 +164,7 @@ public:
 
     void DisplayPolicyInfo(){}
 
-    void OnEnter(const RobotBasicState &rbs) {
+    void OnEnter() {
         run_cnt_ = 0;
         cmd_vel_input_.setZero();
         last_action_eigen.setZero(action_dim);

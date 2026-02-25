@@ -66,6 +66,11 @@ public:
     float stand_duration_ = 1.5;
 
     /**
+     * @brief lie down duration
+     */
+    float liedown_duration_ = 2.0;
+
+    /**
      * @brief wheel vel limit for wheel-legged robot
      */
     float wheel_vel_limit_ = 100;
