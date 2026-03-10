@@ -1,6 +1,11 @@
 # SDK DEPLOY
 ## SDK Overview
-This repository contains the robotics control SDK, currently supporting Lite3 and M20. The repository is structured as follows:
+This repository contains the robotics control SDK, currently supporting Lite3 and M20.
+
+> [!NOTE]
+> Damage caused by using SDK is not covered under warranty!
+
+ The repository is structured as follows:
 - `src/drdds`: The drdds communication format used by the SDK.
 ### Lite3
 - `src/Lite3_sdk_deploy`: The source code for the Lite3 SDK deploy.
@@ -16,7 +21,12 @@ For the M20 SDK deployment process, please refer to the [M20 SDK Deployment Guid
 See the [Contributors](Contributors.md) page for a list of contributors.
 
 ## SDK总览
-本仓库包含机器人控制SDK，当前支持Lite3和M20平台。仓库结构如下：
+本仓库包含机器人控制SDK，当前支持Lite3和M20平台。
+
+> [!NOTE]
+> 因使用 SDK 造成的设备损坏不在保修范围内！
+
+仓库结构如下：
 - `src/drdds`：SDK使用的drdds通信格式。
 ### Lite3
 - `src/Lite3_sdk_deploy`：Lite3 SDK部署的源代码。
