@@ -107,15 +107,20 @@ public:
     virtual void Start() = 0;
 
     virtual void Run() {
+        run_thread_ = std::thread(&StateMachineBase::RunThread, this);
+        rclcpp::spin(ri_ptr_->get_node());
+
+        if (run_thread_.joinable()) 
+            run_thread_.join();
+    }
+
+    virtual void RunThread() {
         set_timer.time_init(5);
         startTime = set_timer.get_start_time();
 
-        std::signal(SIGINT, &StateMachineBase::handler);
-
-        while (rclcpp::ok() && !shutdown_requested_) {
+        while (rclcpp::ok()) {
             if (set_timer.time_interrupt()) {
                 ri_ptr_->RefreshRobotData();
-                rclcpp::spin_some(ri_ptr_->get_node());
 
                 current_controller_->Run();
 
@@ -143,11 +148,6 @@ public:
 
     virtual std::shared_ptr<StateBase> GetStateControllerPtr(StateName state_name) = 0;
     
-    static void handler(int signal) {
-        shutdown_requested_.store(true);
-    }
-
-    static std::atomic<bool> shutdown_requested_;
     const RobotType robot_type_;
 
     int run_cnt_ = 0;
@@ -161,6 +161,7 @@ public:
 
     std::shared_ptr<StateBase> current_controller_;
     StateName current_state_name_, next_state_name_;
+
+    std::thread run_thread_;
 };
 
-std::atomic<bool> StateMachineBase::shutdown_requested_{false};
