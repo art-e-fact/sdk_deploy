@@ -34,7 +34,9 @@ public:
         msfb_.UpdateCurrentState(RobotMotionState::JointDamping);
     };
     virtual void OnExit() {
-
+        // 转出 JointDamping 时重置 target_mode，避免残留指令影响后续状态判断
+        uc_ptr_->GetUserCommand()->target_mode = uint8_t(RobotMotionState::WaitingForStand);
+        std::cout << "Joint Damping complete, switching to Idle. Press Y/Z to stand up." << std::endl;
     }
     virtual void Run() {
         run_time_ = ri_ptr_->GetInterfaceTimeStamp();

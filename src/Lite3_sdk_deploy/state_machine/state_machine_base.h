@@ -125,8 +125,12 @@ public:
 
                 current_controller_->Run();
 
-                if (emergency_stop_requested_.exchange(false) ||
-                    current_controller_->LoseControlJudge()) {
+                if (emergency_stop_requested_.exchange(false)) {
+                    // 与手动阻尼逻辑一致：显式设置 target_mode=JointDamping，
+                    // 使 Idle 恢复后不会因残留指令自动重入上一状态
+                    uc_ptr_->GetUserCommand()->target_mode = uint8_t(RobotMotionState::JointDamping);
+                    next_state_name_ = StateName::kJointDamping;
+                } else if (current_controller_->LoseControlJudge()) {
                     next_state_name_ = StateName::kJointDamping;
                 } else {
                     next_state_name_ = current_controller_->GetNextStateName();
