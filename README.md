@@ -6,7 +6,7 @@ Prerequisites:
  - Pixi: https://pixi.prefix.dev/latest/installation/ 
  - `apt install libevdev-dev` # TODO: Not sure, but I needed it (Andras)
 
-Alternatively, building the workspace workspace without pixi (regular ROS 2 / colcon) is also possible.
+Alternatively, building the workspace without pixi (regular ROS 2 / colcon) is also possible.
 
 ## Usage
 Run the default follower:
