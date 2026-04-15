@@ -1,0 +1,29 @@
+[workspace]
+authors = ["Andras Polgar <andras@artefacts.com>"]
+channels = ["https://prefix.dev/robostack-jazzy", "https://prefix.dev/conda-forge"]
+name = "lite3-workspace"
+platforms = ["linux-64"]
+version = "0.1.0"
+
+[tasks]
+build = {cmd = "colcon build --symlink-install --cmake-args -DBUILD_PLATFORM=x86", inputs = ["src"]}
+
+[dependencies]
+ros-jazzy-ros2run = ">=0.32.8,<0.33"
+ros-jazzy-rclcpp = "*"
+ros-jazzy-ament-cmake = "*"
+ros-jazzy-rosidl-default-generators = "*"
+ros-jazzy-rosidl-default-runtime = "*"
+ros-jazzy-geometry-msgs = "*"
+colcon-common-extensions = ">=0.3.0,<0.4"
+compilers = ">=1.11.0,<2"
+pkg-config = ">=0.29.2,<0.30"
+cmake = "<4"
+ros-jazzy-ament-cmake-auto = ">=2.5.5,<3"
+ninja = ">=1.13.2,<2"
+sysroot_linux-64 = ">=2.39"
+scipy = ">=1.17.1,<2"
+mujoco = ">=3.6.0,<4"
+
+[activation]
+scripts = ["install/setup.sh"]

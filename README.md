@@ -1,4 +1,22 @@
 # SDK DEPLOY
+
+## Installation
+
+Prerequisites:
+ - Pixi: https://pixi.prefix.dev/latest/installation/
+ - `apt install libevdev-dev` # TODO: Not sure, but I needed it (Andras)
+
+## Usage
+Run the default follower:
+```bash
+pixi run ros2 run lite3_sdk_deploy rl_deploy`
+```
+
+Run the simulation:
+```sh
+pixi run python src/Lite3_sdk_deploy/interface/robot/simulation/mujoco_simulation_ros2.py
+```
+
 ## SDK Overview
 This repository contains the robotics control SDK, currently supporting Lite3 and M20.
 

@@ -37,6 +37,21 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(drdds REQUIRED)
 
+if(NOT BUILD_PLATFORM STREQUAL "arm")
+  find_library(LIBEVDEV_LIBRARY evdev
+    PATHS /usr/lib /usr/lib/x86_64-linux-gnu
+    NO_DEFAULT_PATH
+  )
+  find_path(LIBEVDEV_INCLUDE_DIR libevdev-1.0/libevdev/libevdev.h
+    PATHS /usr/include
+    NO_DEFAULT_PATH
+  )
+  if(NOT LIBEVDEV_LIBRARY OR NOT LIBEVDEV_INCLUDE_DIR)
+    message(FATAL_ERROR "libevdev not found. Install with: sudo apt install libevdev-dev")
+  endif()
+  include_directories(${LIBEVDEV_INCLUDE_DIR})
+endif()
+
 set(THIRD_PARTY ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 
 include_directories(
@@ -96,7 +111,7 @@ else()
     -lrt
     -ldl
     -lstdc++
-    -levdev
+    ${LIBEVDEV_LIBRARY}
     # -ldw  启用backward调试功能需要libdw库
   )
 endif()
