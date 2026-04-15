@@ -121,4 +121,11 @@ install(TARGETS rl_deploy
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# Install Python simulation scripts (runnable via: ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py)
+install(PROGRAMS
+  interface/robot/simulation/mujoco_simulation_ros2.py
+  interface/robot/simulation/lidar_sensor.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 ament_package()

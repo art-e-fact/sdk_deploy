@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
  * @file mujoco_simulation.py
  * @brief simulation in mujoco
@@ -18,6 +19,8 @@ from scipy.spatial.transform import Rotation
 import numpy as np
 import mujoco
 import mujoco.viewer
+
+from lidar_sensor import LidarSensor, LIDAR_FREQUENCY_HZ
 
 import rclpy
 from rclpy.node import Node
@@ -103,6 +106,10 @@ class MuJoCoSimulationNode(Node):
         if USE_VIEWER:
             self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
 
+        # LiDAR sensor
+        self.lidar = LidarSensor(self.model, self.data, self, self.viewer)
+        self.lidar_step_interval = int(1.0 / (LIDAR_FREQUENCY_HZ * DT))
+
     def _set_initial_pose(self, key: str):
         """关节位置设置为与 PyBullet 脚本一致的初始角度"""
         qpos0 = self.data.qpos.copy()
@@ -150,8 +157,13 @@ class MuJoCoSimulationNode(Node):
                 if step % 5 == 0:
                     self._publish_robot_state(step)
 
-                # 可视化
+                # LiDAR scan
+                if step % self.lidar_step_interval == 0:
+                    self.lidar.update(self.timestamp)
+
+                # Viewer
                 if self.viewer and step % RENDER_INTERVAL == 0:
+                    self.lidar.visualize()
                     self.viewer.sync()
 
             # Handle ROS callbacks

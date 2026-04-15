@@ -3,18 +3,25 @@
 ## Installation
 
 Prerequisites:
- - Pixi: https://pixi.prefix.dev/latest/installation/
+ - Pixi: https://pixi.prefix.dev/latest/installation/ 
  - `apt install libevdev-dev` # TODO: Not sure, but I needed it (Andras)
+
+Alternatively, building the workspace workspace without pixi (regular ROS 2 / colcon) is also possible.
 
 ## Usage
 Run the default follower:
 ```bash
-pixi run ros2 run lite3_sdk_deploy rl_deploy`
+pixi run ros2 run lite3_sdk_deploy rl_deploy
 ```
 
 Run the simulation:
-```sh
-pixi run python src/Lite3_sdk_deploy/interface/robot/simulation/mujoco_simulation_ros2.py
+```bash
+pixi run ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
+```
+
+Confirm that the Lidar data is being published:
+```bash
+ pixi run ros2 topic echo /scan
 ```
 
 ## SDK Overview

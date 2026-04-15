@@ -10,11 +10,13 @@ build = {cmd = "colcon build --symlink-install --cmake-args -DBUILD_PLATFORM=x86
 
 [dependencies]
 ros-jazzy-ros2run = ">=0.32.8,<0.33"
+ros-jazzy-ros2cli-common-extensions = "*"
 ros-jazzy-rclcpp = "*"
 ros-jazzy-ament-cmake = "*"
 ros-jazzy-rosidl-default-generators = "*"
 ros-jazzy-rosidl-default-runtime = "*"
 ros-jazzy-geometry-msgs = "*"
+ros-jazzy-sensor-msgs = "*"
 colcon-common-extensions = ">=0.3.0,<0.4"
 compilers = ">=1.11.0,<2"
 pkg-config = ">=0.29.2,<0.30"
