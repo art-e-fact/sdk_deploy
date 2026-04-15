@@ -124,7 +124,7 @@ class LidarSensor:
                 break
             dist = self._last_distances[i]
             if dist < 0:
-                # No hit: draw ray at max range in red
+                # No hit: draw ray at max range using the configured miss color
                 draw_dist = RANGE_MAX
                 rgba = RAY_VIS_MISS_RGBA
             else:
