@@ -125,7 +125,7 @@ class MuJoCoSimulationNode(Node):
         """关节位置设置为与 PyBullet 脚本一致的初始角度"""
         qpos0 = self.data.qpos.copy()
         qpos0[7:7 + self.dof_num] = JOINT_INIT[key]  # ,3-6 basequat，0-2 basepos
-        qpos0[:3] = np.array([0, 0, 0.2])
+        qpos0[:3] = np.array([0, 12, 1.5])
         qpos0[3:7] = np.array([1, 0, 0, 0])
         self.data.qpos[:] = qpos0
         mujoco.mj_forward(self.model, self.data)
