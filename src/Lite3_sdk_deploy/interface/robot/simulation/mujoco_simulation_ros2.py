@@ -26,6 +26,9 @@ import rclpy
 from rclpy.node import Node
 from builtin_interfaces.msg import Time
 from drdds.msg import ImuData, JointsData, JointsDataCmd, MetaType, ImuDataValue, JointsDataValue, JointData, JointDataCmd
+from nav_msgs.msg import Odometry
+from geometry_msgs.msg import TransformStamped, Quaternion, Vector3
+from tf2_ros import TransformBroadcaster, StaticTransformBroadcaster
 
 
 
@@ -92,6 +95,14 @@ class MuJoCoSimulationNode(Node):
         # ROS Publishers
         self.imu_pub = self.create_publisher(ImuData, '/IMU_DATA', 200)
         self.joints_pub = self.create_publisher(JointsData, '/JOINTS_DATA', 200)
+        self.odom_pub = self.create_publisher(Odometry, '/odom', 50)
+
+        # TF Broadcasters
+        self.tf_broadcaster = TransformBroadcaster(self)
+        self.static_tf_broadcaster = StaticTransformBroadcaster(self)
+
+        # Publish static transform: base_link -> lidar
+        self._publish_static_lidar_tf()
 
         # ROS Subscriber
         self.cmd_sub = self.create_subscription(
@@ -118,6 +129,67 @@ class MuJoCoSimulationNode(Node):
         qpos0[3:7] = np.array([1, 0, 0, 0])
         self.data.qpos[:] = qpos0
         mujoco.mj_forward(self.model, self.data)
+
+    def _publish_static_lidar_tf(self):
+        t = TransformStamped()
+        t.header.stamp = self._make_sim_stamp()
+        t.header.frame_id = 'base_link'
+        t.child_frame_id = 'lidar'
+        # lidar_site position relative to TORSO in MJCF: pos="0.1245 0 0.2"
+        t.transform.translation = Vector3(x=0.1245, y=0.0, z=0.2)
+        t.transform.rotation = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
+        self.static_tf_broadcaster.sendTransform(t)
+
+    def _make_sim_stamp(self):
+        # Ros time
+        sec = int(self.timestamp)
+        nanosec = int((self.timestamp - sec) * 1e9)
+        from builtin_interfaces.msg import Time as TimeMsg
+        t = TimeMsg()
+        t.sec = sec
+        t.nanosec = nanosec
+        return t
+
+    def _publish_odom_and_tf(self):
+        stamp = self._make_sim_stamp()
+
+        pos = self.data.qpos[0:3]
+        # MuJoCo quaternion is [w, x, y, z]
+        quat_wxyz = self.data.qpos[3:7]
+        linvel = self.data.qvel[0:3]
+        angvel = self.data.qvel[3:6]
+
+        # TF: odom -> base_link
+        t = TransformStamped()
+        t.header.stamp = stamp
+        t.header.frame_id = 'odom'
+        t.child_frame_id = 'base_link'
+        t.transform.translation = Vector3(x=float(pos[0]), y=float(pos[1]), z=float(pos[2]))
+        t.transform.rotation = Quaternion(
+            x=float(quat_wxyz[1]), y=float(quat_wxyz[2]),
+            z=float(quat_wxyz[3]), w=float(quat_wxyz[0])
+        )
+        self.tf_broadcaster.sendTransform(t)
+
+        # Odometry message
+        odom_msg = Odometry()
+        odom_msg.header.stamp = stamp
+        odom_msg.header.frame_id = 'odom'
+        odom_msg.child_frame_id = 'base_link'
+        odom_msg.pose.pose.position.x = float(pos[0])
+        odom_msg.pose.pose.position.y = float(pos[1])
+        odom_msg.pose.pose.position.z = float(pos[2])
+        odom_msg.pose.pose.orientation.x = float(quat_wxyz[1])
+        odom_msg.pose.pose.orientation.y = float(quat_wxyz[2])
+        odom_msg.pose.pose.orientation.z = float(quat_wxyz[3])
+        odom_msg.pose.pose.orientation.w = float(quat_wxyz[0])
+        odom_msg.twist.twist.linear.x = float(linvel[0])
+        odom_msg.twist.twist.linear.y = float(linvel[1])
+        odom_msg.twist.twist.linear.z = float(linvel[2])
+        odom_msg.twist.twist.angular.x = float(angvel[0])
+        odom_msg.twist.twist.angular.y = float(angvel[1])
+        odom_msg.twist.twist.angular.z = float(angvel[2])
+        self.odom_pub.publish(odom_msg)
 
     def _cmd_callback(self, msg: JointsDataCmd):
         """Convert received (published) positions/velocities to internal (raw)"""
@@ -156,6 +228,7 @@ class MuJoCoSimulationNode(Node):
                 # 采样 & 发送观测 (every 5 steps for 200 Hz)
                 if step % 5 == 0:
                     self._publish_robot_state(step)
+                    self._publish_odom_and_tf()
 
                 # LiDAR scan
                 if step % self.lidar_step_interval == 0:
