@@ -104,19 +104,19 @@ After the robot stands and enters RL mode (~5 seconds), send velocity commands:
 
 ```bash
 # Move forward (0.3 m/s)
-pixi run ros2 topic pub /cmd_vel_smoothed geometry_msgs/msg/Twist \
+pixi run ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
   "{linear: {x: 0.3, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" -r 10
 
 # Strafe left (0.3 m/s)
-pixi run ros2 topic pub /cmd_vel_smoothed geometry_msgs/msg/Twist \
+pixi run ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
   "{linear: {x: 0.0, y: 0.3, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" -r 10
 
 # Turn left (0.3 rad/s)
-pixi run ros2 topic pub /cmd_vel_smoothed geometry_msgs/msg/Twist \
+pixi run ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
   "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.3}}" -r 10
 
 # Stop
-pixi run ros2 topic pub /cmd_vel_smoothed geometry_msgs/msg/Twist \
+pixi run ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
   "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" --once
 ```
 

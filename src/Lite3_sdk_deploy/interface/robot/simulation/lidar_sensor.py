@@ -99,6 +99,22 @@ class LidarSensor:
         # Convert distances: -1 (no hit) → inf
         ranges = self.distances.copy()
         ranges[ranges < 0] = float('inf')
+
+        # Filter ground hits caused by body tilt while walking.
+        # Any ray whose world-space direction points downward is hitting
+        # the ground, not a real obstacle. Also filter hits close to ground.
+        GROUND_Z_THRESHOLD = 0.15  # metres above Z=0
+        downward_mask = world_dirs[:, 2] < -0.05  # ray pointing down
+        ranges[downward_mask] = float('inf')
+
+        # Also filter remaining hits whose world-Z is near ground
+        hit_mask = ranges < float('inf')
+        if np.any(hit_mask):
+            hit_points_z = site_pos[2] + ranges[hit_mask] * world_dirs[hit_mask, 2]
+            ground_hits = hit_points_z < GROUND_Z_THRESHOLD
+            idx = np.where(hit_mask)[0][ground_hits]
+            ranges[idx] = float('inf')
+
         msg.ranges = ranges.astype(np.float32).tolist()
 
         self.pub.publish(msg)

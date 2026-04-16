@@ -152,6 +152,12 @@ class MuJoCoSimulationNode(Node):
         linvel = self.data.qvel[0:3]
         angvel = self.data.qvel[3:6]
 
+        # Rotate world-frame velocities into body frame
+        # (nav_msgs/Odometry twist must be in child_frame_id = base_link)
+        R = Rotation.from_quat([quat_wxyz[1], quat_wxyz[2], quat_wxyz[3], quat_wxyz[0]])
+        body_linvel = R.inv().apply(linvel)
+        body_angvel = R.inv().apply(angvel)
+
         # TF: odom -> base_link
         t = TransformStamped()
         t.header.stamp = stamp
@@ -176,12 +182,12 @@ class MuJoCoSimulationNode(Node):
         odom_msg.pose.pose.orientation.y = float(quat_wxyz[2])
         odom_msg.pose.pose.orientation.z = float(quat_wxyz[3])
         odom_msg.pose.pose.orientation.w = float(quat_wxyz[0])
-        odom_msg.twist.twist.linear.x = float(linvel[0])
-        odom_msg.twist.twist.linear.y = float(linvel[1])
-        odom_msg.twist.twist.linear.z = float(linvel[2])
-        odom_msg.twist.twist.angular.x = float(angvel[0])
-        odom_msg.twist.twist.angular.y = float(angvel[1])
-        odom_msg.twist.twist.angular.z = float(angvel[2])
+        odom_msg.twist.twist.linear.x = float(body_linvel[0])
+        odom_msg.twist.twist.linear.y = float(body_linvel[1])
+        odom_msg.twist.twist.linear.z = float(body_linvel[2])
+        odom_msg.twist.twist.angular.x = float(body_angvel[0])
+        odom_msg.twist.twist.angular.y = float(body_angvel[1])
+        odom_msg.twist.twist.angular.z = float(body_angvel[2])
         self.odom_pub.publish(odom_msg)
 
     def _cmd_callback(self, msg: JointsDataCmd):
