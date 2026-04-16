@@ -70,7 +70,7 @@ include_directories(
 add_subdirectory(interface)
 
 # 运行时路径设置
-set(CMAKE_EXE_LINKER_FLAGS "-Wl,--disable-new-dtags")
+set(CMAKE_EXE_LINKER_FLAGS "-Wl,--enable-new-dtags")
 set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
