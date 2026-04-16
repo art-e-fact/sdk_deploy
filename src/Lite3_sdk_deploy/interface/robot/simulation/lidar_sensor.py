@@ -30,6 +30,7 @@ class LidarSensor:
                  node: Node, viewer=None):
         self.model = model
         self.data = data
+        self.node = node
         self.viewer = viewer
 
         self.site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, LIDAR_SITE_NAME)
@@ -85,8 +86,7 @@ class LidarSensor:
 
         # Build LaserScan message
         msg = LaserScan()
-        msg.header.stamp = Time(seconds=int(timestamp),
-                                nanoseconds=int((timestamp % 1) * 1e9)).to_msg()
+        msg.header.stamp = self.node.get_clock().now().to_msg()
         msg.header.frame_id = LIDAR_FRAME_ID
         msg.angle_min = 0.0
         msg.angle_max = 2.0 * math.pi

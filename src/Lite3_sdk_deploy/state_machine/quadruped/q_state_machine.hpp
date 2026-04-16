@@ -18,6 +18,7 @@
 #include "quadruped/rl_control_state.hpp"
 #include "keyboard_interface.hpp"
 #include "retroid_gamepad_interface.hpp"
+#include "twist_interface.hpp"
 #include "hardware/lite3_interface.hpp"
 
 namespace q{
@@ -56,6 +57,12 @@ public:
                 exit(1);
             }
             uc_ptr_ = std::make_shared<RetroidGamepadInterface>(robot_name_, ri_ptr_->get_node());
+        }else if(remote_cmd_type_ == RemoteCommandType::kTwist){
+            if(!ri_ptr_) {
+                std::cerr << "error: RobotInterface must be created before TwistInterface!" << std::endl;
+                exit(1);
+            }
+            uc_ptr_ = std::make_shared<TwistInterface>(robot_name_, ri_ptr_->get_node());
         }else{
             std::cerr << "error user command interface! " << std::endl;
             exit(0);

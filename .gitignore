@@ -8,3 +8,6 @@ __pycache__/
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+
+src/Lite3_sdk_deploy/config/map.pgm
+src/Lite3_sdk_deploy/config/map.yaml
