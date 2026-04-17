@@ -34,9 +34,9 @@ pip install -r requirements.txt
 Activate the venv before running simulation commands.
 
 
-## SLAM Mapping + Nav2 Autonomous Navigation
+## RTAB-Map SLAM + Nav2 Autonomous Navigation
 
-Uses SLAM Toolbox to build a map, then Nav2 for localization and autonomous goal navigation.
+Uses RTAB-Map (2D lidar ICP mode) for SLAM, then Nav2 for autonomous goal navigation.
 
 ### 1. Build a Map (SLAM)
 
@@ -50,47 +50,36 @@ ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
 source install/setup.bash
 ros2 run lite3_sdk_deploy rl_deploy
 
-# Terminal 3 — SLAM Toolbox
+# Terminal 3 — RTAB-Map SLAM
 source install/setup.bash
-ros2 launch slam_toolbox online_async_launch.py \
-  slam_params_file:=$(pwd)/src/Lite3_sdk_deploy/config/slam_toolbox_params.yaml
+ros2 launch lite3_sdk_deploy rtabmap.launch.py
 
 # Terminal 4 — RViz2
 source install/setup.bash
 rviz2
 ```
 
-Stand the robot with "z" then put into RL control mode with "c". Drive the robot around with keyboard controls (wasd) to build the map, then save it:
+Stand the robot with "z" then put into RL control mode with "c". Drive the robot around with keyboard controls (wasd) to build the map.
 
-```bash
-source install/setup.bash
-ros2 run nav2_map_server map_saver_cli -f $(pwd)/src/Lite3_sdk_deploy/config/map
-```
-
-This creates `map.yaml` and `map.pgm` in the config directory.
+The map is saved automatically to `~/.ros/rtabmap.db`. RTAB-Map will reload it in localization mode.
 
 ### 2. Navigate with Nav2
 
-After saving a map, use Nav2 for autonomous waypoint navigation:
+After building a map, use RTAB-Map in localization mode with Nav2 for autonomous navigation:
 
 ```bash
 # Terminal 1 — MuJoCo simulation
 source install/setup.bash
+source venv/bin/activate
 ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
 
 # Terminal 2 — RL controller with twist input
 source install/setup.bash
 ros2 run lite3_sdk_deploy rl_deploy --twist
 
-# Terminal 3 — Localization (AMCL + map server)
+# Terminal 3 — RTAB-Map in localization mode
 source install/setup.bash
-ros2 launch nav2_bringup localization_launch.py \
-  map:=$(pwd)/src/Lite3_sdk_deploy/config/map.yaml \
-  params_file:=$(pwd)/src/Lite3_sdk_deploy/config/nav2_params.yaml
-
-# Load the map into map_server if map not received
-ros2 service call /map_server/load_map nav2_msgs/srv/LoadMap \
-  "{map_url: $(pwd)/src/Lite3_sdk_deploy/config/map.yaml}"
+ros2 launch lite3_sdk_deploy rtabmap.launch.py localization:=true
 
 # Terminal 4 — Navigation (planner + controller)
 source install/setup.bash
@@ -104,8 +93,7 @@ rviz2
 
 In RViz2:
 1. Add **Map** display (topic `/map`, durability: Transient Local)
-2. Set **2D Pose Estimate** to tell AMCL where the robot is
-3. Set **2D Goal Pose** to send a navigation goal
+2. Set **2D Goal Pose** to send a navigation goal
 
 ## Twist Control (Simulation)
 
