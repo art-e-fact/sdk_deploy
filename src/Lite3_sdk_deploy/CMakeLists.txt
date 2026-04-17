@@ -127,6 +127,7 @@ install(TARGETS rl_deploy
 install(PROGRAMS
   interface/robot/simulation/mujoco_simulation_ros2.py
   interface/robot/simulation/lidar_sensor.py
+  interface/robot/simulation/depth_sensor.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

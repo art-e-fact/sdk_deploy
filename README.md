@@ -6,6 +6,8 @@
 
 - **ROS 2 Humble** installed and sourced ([install guide](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html))
 
+> **Tip:** A VS Code Dev Container config is included in `.devcontainer/`. Open the repo in VS Code and select **Reopen in Container** to get a pre-configured ROS 2 Humble environment with all dependencies (including GPU passthrough). This is optional — you can also install everything natively.
+
 ### System dependencies:
   ```bash
   sudo apt install libevdev-dev
@@ -55,8 +57,7 @@ source install/setup.bash
 ros2 launch lite3_sdk_deploy rtabmap.launch.py
 
 # Terminal 4 — RViz2
-source install/setup.bash
-rviz2
+rviz2 -d src/Lite3_sdk_deploy/config/mapping.rviz
 ```
 
 Stand the robot with "z" then put into RL control mode with "c". Drive the robot around with keyboard controls (wasd) to build the map.
@@ -88,12 +89,10 @@ ros2 launch nav2_bringup navigation_launch.py \
 
 # Terminal 5 — RViz2
 source install/setup.bash
-rviz2
+rviz2 -d src/Lite3_sdk_deploy/config/navigation.rviz
 ```
 
-In RViz2:
-1. Add **Map** display (topic `/map`, durability: Transient Local)
-2. Set **2D Goal Pose** to send a navigation goal
+In RViz2: Set **2D Goal Pose** to send a navigation goal
 
 ## Twist Control (Simulation)
 
@@ -136,7 +135,30 @@ ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
 | `angular.z`   | Turn left / right     | 0.7 rad/s |
 
 
+## Simulated Sensors
 
+Sensor modules live in `src/Lite3_sdk_deploy/interface/robot/simulation/`:
+
+| Sensor | File | Key topics |
+|--------|------|------------|
+| 2D LiDAR (RPLiDAR A2M8) | `lidar_sensor.py` | `/scan` |
+| Depth camera (RealSense D435i) | `depth_sensor.py` | `/camera/depth/image_rect_raw`, `/camera/color/image_raw`, `/camera/depth/color/points` |
+
+Each module has **enable/disable flags** at the top of the file to skip expensive computation:
+
+```python
+# lidar_sensor.py
+ENABLE_LIDAR = True
+
+# depth_sensor.py
+ENABLE_DEPTH = True
+ENABLE_COLOR = False
+ENABLE_POINTCLOUD = False  # requires ENABLE_DEPTH
+```
+
+Resolution (`WIDTH`/`HEIGHT`) and publish rate (`*_FREQUENCY_HZ`) are also configurable there.
+
+> **Note:** Currently, the color aligned depth topic is not published. In simulation, the two cameras are co-located so there is no need for alignment. We can publish the aligned depth topic to match how we interface with the real robot.
 
 ## SDK Overview
 This repository contains the robotics control SDK, currently supporting Lite3 and M20.

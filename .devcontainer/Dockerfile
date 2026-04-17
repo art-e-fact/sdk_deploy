@@ -31,6 +31,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-laser-geometry \
     ros-humble-image-geometry \
     ros-humble-rtabmap-ros \
+    ros-humble-realsense2-camera \
+    ros-humble-realsense2-camera-msgs \
     && rm -rf /var/lib/apt/lists/*
 
 # Mujoco

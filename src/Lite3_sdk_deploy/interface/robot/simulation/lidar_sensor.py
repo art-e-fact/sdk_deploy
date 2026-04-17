@@ -10,8 +10,12 @@ import mujoco
 from rclpy.node import Node
 from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
+from geometry_msgs.msg import TransformStamped, Quaternion, Vector3
+from scipy.spatial.transform import Rotation as R_scipy
 
 # -- LiDAR configuration --
+ENABLE_LIDAR = True  # set False to skip ray casting and publishing
+
 LIDAR_SITE_NAME = "lidar_site"
 LIDAR_FRAME_ID = "lidar"
 LIDAR_TOPIC = "/scan"
@@ -19,7 +23,7 @@ LIDAR_FREQUENCY_HZ = 10.0
 NUM_RAYS = 360
 RANGE_MIN = 0.15  # RPLiDAR A2M8 spec
 RANGE_MAX = 8.0   # RPLiDAR A2M8 spec
-VISUALIZE_RAYS = True
+VISUALIZE_RAYS = False  # set to True to draw rays in the MuJoCo viewer (for debugging)
 RAY_VIS_HIT_RGBA = np.array([0.0, 1.0, 0.0, 0.3], dtype=np.float32)
 RAY_VIS_MISS_RGBA = np.array([0.0, 1.0, 0.0, 0.1], dtype=np.float32)
 RAY_VIS_WIDTH = 0.002  # line width in meters
@@ -32,8 +36,13 @@ class LidarSensor:
         self.data = data
         self.node = node
         self.viewer = viewer
-
+        self.enabled = ENABLE_LIDAR
         self.site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, LIDAR_SITE_NAME)
+
+        if not self.enabled:
+            node.get_logger().info("[INFO] LiDAR disabled (ENABLE_LIDAR=False)")
+            return
+
         if self.site_id < 0:
             raise ValueError(f"Site '{LIDAR_SITE_NAME}' not found in model")
 
@@ -64,6 +73,8 @@ class LidarSensor:
 
     def update(self, timestamp: float):
         """Cast rays and publish LaserScan."""
+        if not self.enabled:
+            return
         # Site position and rotation in world frame
         site_pos = self.data.site_xpos[self.site_id]      # (3,)
         site_rot = self.data.site_xmat[self.site_id].reshape(3, 3)  # columns = site X,Y,Z in world
@@ -128,7 +139,7 @@ class LidarSensor:
 
     def visualize(self):
         """Draw LiDAR rays in the MuJoCo viewer."""
-        if not VISUALIZE_RAYS or self.viewer is None:
+        if not self.enabled or not VISUALIZE_RAYS or self.viewer is None:
             return
         if not hasattr(self, '_last_site_pos'):
             return
@@ -157,3 +168,33 @@ class LidarSensor:
             )
             g.rgba[:] = rgba
             scn.ngeom += 1
+
+    def get_static_transforms(self, stamp):
+        """Return base_link -> lidar TF, read from MuJoCo model."""
+        transforms = []
+        if self.site_id < 0:
+            return transforms
+
+        # Compute lidar pose relative to TORSO (base_link) via world-frame data
+        torso_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, 'TORSO')
+        torso_pos = self.data.xpos[torso_id]
+        torso_rot = self.data.xmat[torso_id].reshape(3, 3)
+
+        site_pos_w = self.data.site_xpos[self.site_id]
+        site_rot_w = self.data.site_xmat[self.site_id].reshape(3, 3)
+
+        pos_local = torso_rot.T @ (site_pos_w - torso_pos)
+        rot_local = torso_rot.T @ site_rot_w
+        quat_xyzw = R_scipy.from_matrix(rot_local).as_quat()  # [x, y, z, w]
+
+        t = TransformStamped()
+        t.header.stamp = stamp
+        t.header.frame_id = 'base_link'
+        t.child_frame_id = LIDAR_FRAME_ID
+        t.transform.translation = Vector3(
+            x=float(pos_local[0]), y=float(pos_local[1]), z=float(pos_local[2]))
+        t.transform.rotation = Quaternion(
+            x=float(quat_xyzw[0]), y=float(quat_xyzw[1]),
+            z=float(quat_xyzw[2]), w=float(quat_xyzw[3]))
+        transforms.append(t)
+        return transforms

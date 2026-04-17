@@ -21,6 +21,7 @@ import mujoco
 import mujoco.viewer
 
 from lidar_sensor import LidarSensor, LIDAR_FREQUENCY_HZ
+from depth_sensor import DepthSensor, DEPTH_FREQUENCY_HZ
 
 import rclpy
 from rclpy.node import Node
@@ -42,6 +43,9 @@ XML_PATH = CURRENT_DIR / ".." / ".." / ".." / "Lite3_description" / "lite3_mjcf"
 # Convert to absolute path as string
 XML_PATH = str(XML_PATH.resolve())
 
+D435I_XML_PATH = CURRENT_DIR / ".." / ".." / ".." / "Lite3_description" / "lite3_mjcf" / "realsense_d435i" / "d435i.xml"
+D435I_XML_PATH = str(D435I_XML_PATH.resolve())
+
 
 USE_VIEWER = True
 DT = 0.001
@@ -58,7 +62,8 @@ JOINT_INIT = {
 class MuJoCoSimulationNode(Node):
     def __init__(self,
                  model_key: str = MODEL_NAME,
-                 xml_path: str = XML_PATH):
+                 xml_path: str = XML_PATH,
+                 d435i_xml_path: str = D435I_XML_PATH):
 
         super().__init__('mujoco_simulation')
 
@@ -66,7 +71,19 @@ class MuJoCoSimulationNode(Node):
         if not os.path.isfile(xml_path):
             raise FileNotFoundError(f"Cannot find MJCF: {xml_path}")
 
-        self.model = mujoco.MjModel.from_xml_path(xml_path)
+        # Load base model via mjSpec and attach D435i from its own XML
+        spec = mujoco.MjSpec.from_file(xml_path)
+        if os.path.isfile(d435i_xml_path):
+            d435i_spec = mujoco.MjSpec.from_file(d435i_xml_path)
+            # Find the d435i_mount site on TORSO
+            torso = spec.worldbody.first_body()
+            mount_site = next(s for s in torso.sites if s.name == 'd435i_mount')
+            spec.attach(d435i_spec, prefix='d435i-', site=mount_site)
+            self.get_logger().info("[INFO] D435i model attached via mjSpec")
+        else:
+            self.get_logger().warn(f"D435i XML not found: {d435i_xml_path}, skipping depth camera")
+
+        self.model = spec.compile()
         self.model.opt.timestep = DT
         self.data = mujoco.MjData(self.model)
 
@@ -101,9 +118,6 @@ class MuJoCoSimulationNode(Node):
         self.tf_broadcaster = TransformBroadcaster(self)
         self.static_tf_broadcaster = StaticTransformBroadcaster(self)
 
-        # Publish static transform: base_link -> lidar
-        self._publish_static_lidar_tf()
-
         # ROS Subscriber
         self.cmd_sub = self.create_subscription(
             JointsDataCmd,
@@ -116,10 +130,22 @@ class MuJoCoSimulationNode(Node):
         self.viewer = None
         if USE_VIEWER:
             self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
+            # Point viewer camera at the robot's initial position
+            self.viewer.cam.lookat[:] = [-5.0, 0.0, 0.3]
+            self.viewer.cam.distance = 3.0
+            self.viewer.cam.azimuth = 90.0
+            self.viewer.cam.elevation = -20.0
 
         # LiDAR sensor
         self.lidar = LidarSensor(self.model, self.data, self, self.viewer)
         self.lidar_step_interval = int(1.0 / (LIDAR_FREQUENCY_HZ * DT))
+
+        # Depth camera sensor (RealSense D435i)
+        self.depth = DepthSensor(self.model, self.data, self, self.viewer)
+        self.depth_step_interval = int(1.0 / (DEPTH_FREQUENCY_HZ * DT))
+
+        # Publish all static transforms in one call
+        self._publish_static_transforms()
 
     def _set_initial_pose(self, key: str):
         """关节位置设置为与 PyBullet 脚本一致的初始角度"""
@@ -130,15 +156,14 @@ class MuJoCoSimulationNode(Node):
         self.data.qpos[:] = qpos0
         mujoco.mj_forward(self.model, self.data)
 
-    def _publish_static_lidar_tf(self):
-        t = TransformStamped()
-        t.header.stamp = self._make_sim_stamp()
-        t.header.frame_id = 'base_link'
-        t.child_frame_id = 'lidar'
-        # lidar_site position relative to TORSO in MJCF: pos="0.1245 0 0.2"
-        t.transform.translation = Vector3(x=0.1245, y=0.0, z=0.2)
-        t.transform.rotation = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
-        self.static_tf_broadcaster.sendTransform(t)
+    def _publish_static_transforms(self):
+        """Collect static TFs from sensors and publish in one call."""
+        stamp = self._make_sim_stamp()
+        transforms = []
+        transforms.extend(self.lidar.get_static_transforms(stamp))
+        transforms.extend(self.depth.get_static_transforms(stamp))
+        if transforms:
+            self.static_tf_broadcaster.sendTransform(transforms)
 
     def _make_sim_stamp(self):
         return self.get_clock().now().to_msg()
@@ -232,6 +257,10 @@ class MuJoCoSimulationNode(Node):
                 # LiDAR scan
                 if step % self.lidar_step_interval == 0:
                     self.lidar.update(self.timestamp)
+
+                # Depth camera
+                if step % self.depth_step_interval == 0:
+                    self.depth.update(self.timestamp)
 
                 # Viewer
                 if self.viewer and step % RENDER_INTERVAL == 0:
