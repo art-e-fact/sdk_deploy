@@ -5,7 +5,8 @@
 ### Prerequisites
 
 - **ROS 2 Humble** installed and sourced ([install guide](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html))
-- System dependencies:
+
+### System dependencies:
   ```bash
   sudo apt install libevdev-dev
   rosdep install --from-paths src --ignore-src -r -y
@@ -24,7 +25,7 @@ source install/setup.bash
 The MuJoCo simulation requires Python packages not available via rosdep. Set up a venv once:
 
 ```bash
-python3 -m venv --system-site-packages venv
+python3 -m venv venv
 touch venv/COLCON_IGNORE
 source venv/bin/activate
 pip install -r requirements.txt
@@ -32,22 +33,6 @@ pip install -r requirements.txt
 
 Activate the venv before running simulation commands.
 
-## Usage
-Run the simulation:
-```bash
-ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
-```
-
-Run the default follower:
-```bash
-ros2 run lite3_sdk_deploy rl_deploy
-```
-
-
-Confirm that the Lidar data is being published:
-```bash
-ros2 topic echo /scan
-```
 
 ## SLAM Mapping + Nav2 Autonomous Navigation
 
@@ -57,22 +42,28 @@ Uses SLAM Toolbox to build a map, then Nav2 for localization and autonomous goal
 
 ```bash
 # Terminal 1 — MuJoCo simulation
+source install/setup.bash
+source venv/bin/activate
 ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
 
 # Terminal 2 — RL controller (keyboard control for driving around to map)
+source install/setup.bash
 ros2 run lite3_sdk_deploy rl_deploy
 
 # Terminal 3 — SLAM Toolbox
+source install/setup.bash
 ros2 launch slam_toolbox online_async_launch.py \
   slam_params_file:=$(pwd)/src/Lite3_sdk_deploy/config/slam_toolbox_params.yaml
 
 # Terminal 4 — RViz2
+source install/setup.bash
 rviz2
 ```
 
 Stand the robot with "z" then put into RL control mode with "c". Drive the robot around with keyboard controls (wasd) to build the map, then save it:
 
 ```bash
+source install/setup.bash
 ros2 run nav2_map_server map_saver_cli -f $(pwd)/src/Lite3_sdk_deploy/config/map
 ```
 
@@ -84,25 +75,30 @@ After saving a map, use Nav2 for autonomous waypoint navigation:
 
 ```bash
 # Terminal 1 — MuJoCo simulation
+source install/setup.bash
 ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
 
 # Terminal 2 — RL controller with twist input
+source install/setup.bash
 ros2 run lite3_sdk_deploy rl_deploy --twist
 
 # Terminal 3 — Localization (AMCL + map server)
+source install/setup.bash
 ros2 launch nav2_bringup localization_launch.py \
   map:=$(pwd)/src/Lite3_sdk_deploy/config/map.yaml \
   params_file:=$(pwd)/src/Lite3_sdk_deploy/config/nav2_params.yaml
 
-# Load the map into map_server
+# Load the map into map_server if map not received
 ros2 service call /map_server/load_map nav2_msgs/srv/LoadMap \
   "{map_url: $(pwd)/src/Lite3_sdk_deploy/config/map.yaml}"
 
 # Terminal 4 — Navigation (planner + controller)
+source install/setup.bash
 ros2 launch nav2_bringup navigation_launch.py \
   params_file:=$(pwd)/src/Lite3_sdk_deploy/config/nav2_params.yaml
 
 # Terminal 5 — RViz2
+source install/setup.bash
 rviz2
 ```
 
