@@ -28,9 +28,12 @@ def generate_launch_description():
                 'subscribe_scan': True,
                 'subscribe_depth': False,
                 'subscribe_rgb': False,
+                'subscribe_odom_info': False,
                 'frame_id': 'base_link',
                 'odom_frame_id': 'odom',
                 'map_frame_id': 'map',
+                'publish_tf': True,
+                'use_action_for_goal': True,
                 'database_path': database_path,
                 'queue_size': 30,
                 'approx_sync': True,
@@ -41,8 +44,8 @@ def generate_launch_description():
 
                 # Grid map from laser scans
                 'Grid/FromDepth': 'false',
-                'Grid/RangeMin': '0.1',
-                'Grid/RangeMax': '12.0',
+                'Grid/RangeMin': '0.3',  # ignore laser hits on the robot body
+                'Grid/RangeMax': '8.0',  # match RPLiDAR A2M8 max range
                 'Grid/CellSize': '0.05',
                 'Grid/MaxGroundHeight': '0.05',
                 'Grid/MaxObstacleHeight': '2.0',
@@ -51,6 +54,7 @@ def generate_launch_description():
                 # Registration / ICP
                 'Reg/Strategy': '1',  # 1 = ICP
                 'Reg/Force3DoF': 'true',  # 2D mode
+                'Icp/VoxelSize': '0.05',  # downsample scans before ICP
                 'Icp/MaxCorrespondenceDistance': '0.1',
                 'Icp/PM': 'true',
                 'Icp/PMOutlierRatio': '0.65',
@@ -63,6 +67,9 @@ def generate_launch_description():
                 'RGBD/AngularUpdate': '0.05',
                 'RGBD/LinearUpdate': '0.05',
                 'RGBD/OptimizeFromGraphEnd': 'false',
+
+                # Optimizer
+                'Optimizer/GravitySigma': '0',  # disable IMU constraints (2D mode)
 
                 # Memory management
                 'Rtabmap/DetectionRate': '1.0',

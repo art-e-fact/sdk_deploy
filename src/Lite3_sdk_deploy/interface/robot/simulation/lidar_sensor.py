@@ -17,8 +17,8 @@ LIDAR_FRAME_ID = "lidar"
 LIDAR_TOPIC = "/scan"
 LIDAR_FREQUENCY_HZ = 10.0
 NUM_RAYS = 360
-RANGE_MIN = 0.1
-RANGE_MAX = 12.0
+RANGE_MIN = 0.15  # RPLiDAR A2M8 spec
+RANGE_MAX = 8.0   # RPLiDAR A2M8 spec
 VISUALIZE_RAYS = True
 RAY_VIS_HIT_RGBA = np.array([0.0, 1.0, 0.0, 0.3], dtype=np.float32)
 RAY_VIS_MISS_RGBA = np.array([0.0, 1.0, 0.0, 0.1], dtype=np.float32)
@@ -41,7 +41,8 @@ class LidarSensor:
         self.body_id = model.site_bodyid[self.site_id]
 
         # Precompute local ray directions in the site's XY plane
-        angles = np.linspace(0.0, 2.0 * math.pi, NUM_RAYS, endpoint=False)
+        # RPLiDAR publishes from -pi to +pi (via M_PI - angle transform)
+        angles = np.linspace(-math.pi, math.pi, NUM_RAYS, endpoint=False)
         self.local_dirs = np.column_stack([
             np.cos(angles), np.sin(angles), np.zeros(NUM_RAYS)
         ])  # (NUM_RAYS, 3)
@@ -59,6 +60,7 @@ class LidarSensor:
         # Precompute constant LaserScan fields
         self.angle_increment = 2.0 * math.pi / NUM_RAYS
         self.scan_time = 1.0 / LIDAR_FREQUENCY_HZ
+        self.time_increment = self.scan_time / (NUM_RAYS - 1)  # match RPLiDAR
 
     def update(self, timestamp: float):
         """Cast rays and publish LaserScan."""
@@ -88,10 +90,10 @@ class LidarSensor:
         msg = LaserScan()
         msg.header.stamp = self.node.get_clock().now().to_msg()
         msg.header.frame_id = LIDAR_FRAME_ID
-        msg.angle_min = 0.0
-        msg.angle_max = 2.0 * math.pi
+        msg.angle_min = -math.pi
+        msg.angle_max = math.pi
         msg.angle_increment = self.angle_increment
-        msg.time_increment = 0.0
+        msg.time_increment = self.time_increment
         msg.scan_time = self.scan_time
         msg.range_min = RANGE_MIN
         msg.range_max = RANGE_MAX
