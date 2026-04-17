@@ -2,26 +2,51 @@
 
 ## Installation
 
-Prerequisites:
- - Pixi: https://pixi.prefix.dev/latest/installation/ 
- - `apt install libevdev-dev` # TODO: Not sure, but I needed it (Andras)
+### Prerequisites
 
-Alternatively, building the workspace without pixi (regular ROS 2 / colcon) is also possible.
+- **ROS 2 Humble** installed and sourced ([install guide](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html))
+- System dependencies:
+  ```bash
+  sudo apt install libevdev-dev
+  rosdep install --from-paths src --ignore-src -r -y
+  ```
+
+### Build
+
+```bash
+source /opt/ros/humble/setup.bash
+colcon build --symlink-install --cmake-args -DBUILD_PLATFORM=x86
+source install/setup.bash
+```
+
+### Python venv (for simulation only)
+
+The MuJoCo simulation requires Python packages not available via rosdep. Set up a venv once:
+
+```bash
+python3 -m venv --system-site-packages venv
+touch venv/COLCON_IGNORE
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+Activate the venv before running simulation commands.
 
 ## Usage
-Run the default follower:
-```bash
-pixi run ros2 run lite3_sdk_deploy rl_deploy
-```
-
 Run the simulation:
 ```bash
-pixi run ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
+ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
 ```
+
+Run the default follower:
+```bash
+ros2 run lite3_sdk_deploy rl_deploy
+```
+
 
 Confirm that the Lidar data is being published:
 ```bash
- pixi run ros2 topic echo /scan
+ros2 topic echo /scan
 ```
 
 ## SLAM Mapping + Nav2 Autonomous Navigation
@@ -32,23 +57,23 @@ Uses SLAM Toolbox to build a map, then Nav2 for localization and autonomous goal
 
 ```bash
 # Terminal 1 — MuJoCo simulation
-pixi run ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
+ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
 
 # Terminal 2 — RL controller (keyboard control for driving around to map)
-pixi run ros2 run lite3_sdk_deploy rl_deploy
+ros2 run lite3_sdk_deploy rl_deploy
 
 # Terminal 3 — SLAM Toolbox
-pixi run ros2 launch slam_toolbox online_async_launch.py \
+ros2 launch slam_toolbox online_async_launch.py \
   slam_params_file:=$(pwd)/src/Lite3_sdk_deploy/config/slam_toolbox_params.yaml
 
-# Terminal 4 — RViz2 
-pixi run rviz2
+# Terminal 4 — RViz2
+rviz2
 ```
 
 Stand the robot with "z" then put into RL control mode with "c". Drive the robot around with keyboard controls (wasd) to build the map, then save it:
 
 ```bash
-pixi run ros2 run nav2_map_server map_saver_cli -f $(pwd)/src/Lite3_sdk_deploy/config/map
+ros2 run nav2_map_server map_saver_cli -f $(pwd)/src/Lite3_sdk_deploy/config/map
 ```
 
 This creates `map.yaml` and `map.pgm` in the config directory.
@@ -59,26 +84,26 @@ After saving a map, use Nav2 for autonomous waypoint navigation:
 
 ```bash
 # Terminal 1 — MuJoCo simulation
-pixi run ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
+ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
 
 # Terminal 2 — RL controller with twist input
-pixi run ros2 run lite3_sdk_deploy rl_deploy --twist
+ros2 run lite3_sdk_deploy rl_deploy --twist
 
 # Terminal 3 — Localization (AMCL + map server)
-pixi run ros2 launch nav2_bringup localization_launch.py \
+ros2 launch nav2_bringup localization_launch.py \
   map:=$(pwd)/src/Lite3_sdk_deploy/config/map.yaml \
   params_file:=$(pwd)/src/Lite3_sdk_deploy/config/nav2_params.yaml
 
 # Load the map into map_server
-pixi run ros2 service call /map_server/load_map nav2_msgs/srv/LoadMap \
+ros2 service call /map_server/load_map nav2_msgs/srv/LoadMap \
   "{map_url: $(pwd)/src/Lite3_sdk_deploy/config/map.yaml}"
 
 # Terminal 4 — Navigation (planner + controller)
-pixi run ros2 launch nav2_bringup navigation_launch.py \
+ros2 launch nav2_bringup navigation_launch.py \
   params_file:=$(pwd)/src/Lite3_sdk_deploy/config/nav2_params.yaml
 
 # Terminal 5 — RViz2
-pixi run rviz2
+rviz2
 ```
 
 In RViz2:
@@ -92,10 +117,10 @@ In RViz2:
 
 ```bash
 # Terminal 1 — MuJoCo simulation (publishes odom, TF, /scan)
-pixi run ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
+ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
 
 # Terminal 2 — RL controller with twist input (auto stands up + enters RL mode after ~5s)
-pixi run ros2 run lite3_sdk_deploy rl_deploy --twist
+ros2 run lite3_sdk_deploy rl_deploy --twist
 ```
 
 ### Manual Velocity Commands
@@ -104,19 +129,19 @@ After the robot stands and enters RL mode (~5 seconds), send velocity commands:
 
 ```bash
 # Move forward (0.3 m/s)
-pixi run ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
   "{linear: {x: 0.3, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" -r 10
 
 # Strafe left (0.3 m/s)
-pixi run ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
   "{linear: {x: 0.0, y: 0.3, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" -r 10
 
 # Turn left (0.3 rad/s)
-pixi run ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
   "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.3}}" -r 10
 
 # Stop
-pixi run ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
   "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" --once
 ```
 

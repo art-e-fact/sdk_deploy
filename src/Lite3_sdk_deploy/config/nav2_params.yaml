@@ -123,7 +123,8 @@ controller_server:
         time_step: 3
       critics: [
         "ConstraintCritic", "CostCritic", "GoalCritic",
-        "GoalAngleCritic", "PathAlignCritic", "PathFollowCritic"]
+        "GoalAngleCritic", "PathAlignCritic", "PathFollowCritic",
+        "PreferForwardCritic"]
       ConstraintCritic:
         enabled: true
         cost_power: 1
@@ -250,7 +251,7 @@ planner_server:
     planner_plugins: ["GridBased"]
     costmap_update_timeout: 1.0
     GridBased:
-      plugin: "nav2_navfn_planner::NavfnPlanner"
+      plugin: "nav2_navfn_planner/NavfnPlanner"
       tolerance: 0.5
       use_astar: true
       allow_unknown: true
@@ -273,13 +274,13 @@ behavior_server:
     cycle_frequency: 10.0
     behavior_plugins: ["spin", "backup", "drive_on_heading", "wait"]
     spin:
-      plugin: "nav2_behaviors::Spin"
+      plugin: "nav2_behaviors/Spin"
     backup:
-      plugin: "nav2_behaviors::BackUp"
+      plugin: "nav2_behaviors/BackUp"
     drive_on_heading:
-      plugin: "nav2_behaviors::DriveOnHeading"
+      plugin: "nav2_behaviors/DriveOnHeading"
     wait:
-      plugin: "nav2_behaviors::Wait"
+      plugin: "nav2_behaviors/Wait"
     local_frame: odom
     global_frame: map
     robot_base_frame: base_link
@@ -348,7 +349,7 @@ docking_server:
     dock_prestaging_tolerance: 0.5
     dock_plugins: ['simple_charging_dock']
     simple_charging_dock:
-      plugin: 'opennav_docking::SimpleChargingDock'
+      plugin: 'opennav_docking/SimpleChargingDock'
       docking_threshold: 0.05
       staging_x_offset: -0.7
       use_external_detection_pose: true
@@ -381,14 +382,14 @@ route_server:
     smooth_corners: true
     operations: ["AdjustSpeedLimit", "ReroutingService", "CollisionMonitor"]
     ReroutingService:
-      plugin: "nav2_route::ReroutingService"
+      plugin: "nav2_route/ReroutingService"
     AdjustSpeedLimit:
-      plugin: "nav2_route::AdjustSpeedLimit"
+      plugin: "nav2_route/AdjustSpeedLimit"
     CollisionMonitor:
-      plugin: "nav2_route::CollisionMonitor"
+      plugin: "nav2_route/CollisionMonitor"
       max_collision_dist: 3.0
     edge_cost_functions: ["DistanceScorer", "CostmapScorer"]
     DistanceScorer:
-      plugin: "nav2_route::DistanceScorer"
+      plugin: "nav2_route/DistanceScorer"
     CostmapScorer:
-      plugin: "nav2_route::CostmapScorer"
+      plugin: "nav2_route/CostmapScorer"

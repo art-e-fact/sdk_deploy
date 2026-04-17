@@ -11,3 +11,5 @@ __pycache__/
 
 src/Lite3_sdk_deploy/config/map.pgm
 src/Lite3_sdk_deploy/config/map.yaml
+
+venv/
