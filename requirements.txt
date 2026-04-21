@@ -1,0 +1,6 @@
+mujoco
+scipy
+numpy
+empy==3.3.4
+catkin-pkg
+lark
