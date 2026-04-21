@@ -14,6 +14,7 @@ import time
 import socket
 import struct
 import threading
+import random
 from pathlib import Path
 from scipy.spatial.transform import Rotation
 import numpy as np
@@ -22,6 +23,7 @@ import mujoco.viewer
 
 from lidar_sensor import LidarSensor, LIDAR_FREQUENCY_HZ
 from depth_sensor import DepthSensor, DEPTH_FREQUENCY_HZ
+from procedural_scene_generator import build_procedural_spec
 
 import rclpy
 from rclpy.node import Node
@@ -37,11 +39,15 @@ MODEL_NAME = "Lite3"
 # Get the directory of the current Python file
 CURRENT_DIR = Path(__file__).resolve().parent
 
-# Define the XML path relative to the Python file
+# Define the default XML path relative to the Python file
 XML_PATH = CURRENT_DIR / ".." / ".." / ".." / "Lite3_description" / "lite3_mjcf" / "mjcf" / "Lite3_stair.xml"
 
 # Convert to absolute path as string
 XML_PATH = str(XML_PATH.resolve())
+
+# Robot-only MJCF used when the full scene is generated procedurally in Python.
+LITE3_ROBOT_XML_PATH = CURRENT_DIR / ".." / ".." / ".." / "Lite3_description" / "lite3_mjcf" / "mjcf" / "Lite3.xml"
+LITE3_ROBOT_XML_PATH = str(LITE3_ROBOT_XML_PATH.resolve())
 
 D435I_XML_PATH = CURRENT_DIR / ".." / ".." / ".." / "Lite3_description" / "lite3_mjcf" / "realsense_d435i" / "d435i.xml"
 D435I_XML_PATH = str(D435I_XML_PATH.resolve())
@@ -67,12 +73,31 @@ class MuJoCoSimulationNode(Node):
 
         super().__init__('mujoco_simulation')
 
-        # 加载 MJCF
-        if not os.path.isfile(xml_path):
-            raise FileNotFoundError(f"Cannot find MJCF: {xml_path}")
+        self.declare_parameter('use_procedural_scene', False)
+        self.declare_parameter('procedural_env_seed', -1)
+        use_procedural_scene = bool(self.get_parameter('use_procedural_scene').value)
+        configured_seed = int(self.get_parameter('procedural_env_seed').value)
 
-        # Load base model via mjSpec and attach D435i from its own XML
-        spec = mujoco.MjSpec.from_file(xml_path)
+        if use_procedural_scene:
+            if not os.path.isfile(LITE3_ROBOT_XML_PATH):
+                raise FileNotFoundError(f"Cannot find Lite3 robot MJCF: {LITE3_ROBOT_XML_PATH}")
+            scene_seed = configured_seed if configured_seed >= 0 else random.randint(0, 2**31 - 1)
+            spec, scene_meta = build_procedural_spec(
+                LITE3_ROBOT_XML_PATH,
+                robot_start_xy=(-5.0, 0.0),
+                seed=scene_seed,
+            )
+            self.get_logger().info(
+                f"[INFO] Procedural scene enabled (robot=Lite3.xml, world built in Python): "
+                f"seed={scene_meta['seed']}, nodes={scene_meta['nodes']}, "
+                f"edges={scene_meta['edges']}, obstacles={scene_meta['obstacles']}"
+            )
+        else:
+            if not os.path.isfile(xml_path):
+                raise FileNotFoundError(f"Cannot find MJCF: {xml_path}")
+            spec = mujoco.MjSpec.from_file(xml_path)
+            self.get_logger().info("[INFO] Using default static scene")
+
         if os.path.isfile(d435i_xml_path):
             d435i_spec = mujoco.MjSpec.from_file(d435i_xml_path)
             # Find the d435i_mount site on TORSO

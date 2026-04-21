@@ -7,6 +7,12 @@
 - **ROS 2 Humble** installed and sourced ([install guide](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html))
 
 > **Tip:** A VS Code Dev Container config is included in `.devcontainer/`. Open the repo in VS Code and select **Reopen in Container** to get a pre-configured ROS 2 Humble environment with all dependencies (including GPU passthrough). This is optional — you can also install everything natively.
+>
+> **X11 note (for MuJoCo/GLFW in devcontainer):** If simulation fails with errors like `X11: Failed to open display :0`, allow the container/root user to access your host X server before launching:
+> ```bash
+> xhost +si:localuser:root
+> ```
+> Run this on the host (outside the container) each new login/session.
 
 ### System dependencies:
   ```bash
@@ -43,7 +49,7 @@ Uses RTAB-Map (2D lidar ICP mode) for SLAM, then Nav2 for autonomous goal naviga
 ### 1. Build a Map (SLAM)
 
 ```bash
-# Terminal 1 — MuJoCo simulation
+# Terminal 1 — MuJoCo simulation (see how to use a procedurally generated scene below)
 source install/setup.bash
 source venv/bin/activate
 ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
@@ -58,6 +64,22 @@ ros2 launch lite3_sdk_deploy rtabmap.launch.py
 
 # Terminal 4 — RViz2
 rviz2 -d src/Lite3_sdk_deploy/config/mapping.rviz
+```
+
+### Optional: Procedural Scene (MuJoCo)
+
+By default, simulation uses the authored static scene. To generate the environment procedurally at runtime, use:
+
+```bash
+ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py --ros-args -p use_procedural_scene:=true
+```
+
+Optional seed for reproducible layouts:
+
+```bash
+ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py --ros-args \
+  -p use_procedural_scene:=true \
+  -p procedural_env_seed:=1234
 ```
 
 Stand the robot with "z" then put into RL control mode with "c". Drive the robot around with keyboard controls (wasd) to build the map.

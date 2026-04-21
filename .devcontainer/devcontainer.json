@@ -12,14 +12,16 @@
         "--net=host",
         "--privileged",
         "--env=DISPLAY=${localEnv:DISPLAY}",
+        "--env=XAUTHORITY=/root/.Xauthority",
         "--env=WAYLAND_DISPLAY=${localEnv:WAYLAND_DISPLAY}",
         "--env=XDG_RUNTIME_DIR=${localEnv:XDG_RUNTIME_DIR}",
         "--volume=/tmp/.X11-unix:/tmp/.X11-unix",
+        "--volume=${localEnv:HOME}/.Xauthority:/root/.Xauthority:ro",
         "--volume=${localEnv:XDG_RUNTIME_DIR}:${localEnv:XDG_RUNTIME_DIR}",
         "--device=/dev/dri"
     ],
     // Source ROS on every shell
-    "postCreateCommand": "echo 'source /opt/ros/humble/setup.bash' >> ~/.bashrc && xauth generate ${DISPLAY} . trusted",
+    "postCreateCommand": "echo 'source /opt/ros/humble/setup.bash' >> ~/.bashrc",
     
     "customizations": {
         "vscode": {
