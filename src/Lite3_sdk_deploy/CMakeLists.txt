@@ -128,6 +128,7 @@ install(PROGRAMS
   interface/robot/simulation/mujoco_simulation_ros2.py
   interface/robot/simulation/lidar_sensor.py
   interface/robot/simulation/depth_sensor.py
+  interface/robot/simulation/auto_waypoint_navigator.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -138,6 +139,10 @@ install(DIRECTORY config/
 install(FILES config/rtabmap_launch.py
   DESTINATION share/${PROJECT_NAME}/launch
   RENAME rtabmap.launch.py
+)
+install(FILES config/autonomous_mapping_launch.py
+  DESTINATION share/${PROJECT_NAME}/launch
+  RENAME autonomous_mapping.launch.py
 )
 
 ament_package()

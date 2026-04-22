@@ -86,6 +86,28 @@ Stand the robot with "z" then put into RL control mode with "c". Drive the robot
 
 The map is saved automatically to `~/.ros/rtabmap.db`. RTAB-Map will reload it in localization mode.
 
+### Optional: Autonomous Waypoint Traversal (Procedural Scene)
+
+You can automate exploration for map-building by launching the full stack in one command (MuJoCo + RL twist + waypoint navigator + RTAB-Map + RViz mapping config):
+
+```bash
+source install/setup.bash
+source venv/bin/activate
+ros2 launch lite3_sdk_deploy autonomous_mapping.launch.py
+```
+
+Headless mode (MuJoCo viewer off and RViz disabled):
+
+```bash
+ros2 launch lite3_sdk_deploy autonomous_mapping.launch.py headless:=true
+```
+
+
+Notes:
+- The waypoint mission is generated from the scene graph to traverse all free-space edges (some waypoints may be revisited by design).
+- This mode is a coverage helper and does not perform reactive obstacle avoidance beyond following the free-space corridors generated in the procedural map.
+- Waypoints are published on `/procedural_waypoints` (`geometry_msgs/PoseArray`, `odom` frame) and velocity commands are published on `/cmd_vel`.
+
 ### 2. Navigate with Nav2
 
 After building a map, use RTAB-Map in localization mode with Nav2 for autonomous navigation:

@@ -30,8 +30,9 @@ from rclpy.node import Node
 from builtin_interfaces.msg import Time
 from drdds.msg import ImuData, JointsData, JointsDataCmd, MetaType, ImuDataValue, JointsDataValue, JointData, JointDataCmd
 from nav_msgs.msg import Odometry
-from geometry_msgs.msg import TransformStamped, Quaternion, Vector3
+from geometry_msgs.msg import TransformStamped, Quaternion, Vector3, Pose, PoseArray
 from tf2_ros import TransformBroadcaster, StaticTransformBroadcaster
+from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 
 
 
@@ -75,8 +76,12 @@ class MuJoCoSimulationNode(Node):
 
         self.declare_parameter('use_procedural_scene', False)
         self.declare_parameter('procedural_env_seed', -1)
+        self.declare_parameter('headless', False)
         use_procedural_scene = bool(self.get_parameter('use_procedural_scene').value)
         configured_seed = int(self.get_parameter('procedural_env_seed').value)
+        headless = bool(self.get_parameter('headless').value)
+        use_viewer = USE_VIEWER and (not headless)
+        self.procedural_waypoints_msg = None
 
         if use_procedural_scene:
             if not os.path.isfile(LITE3_ROBOT_XML_PATH):
@@ -92,6 +97,11 @@ class MuJoCoSimulationNode(Node):
                 f"seed={scene_meta['seed']}, nodes={scene_meta['nodes']}, "
                 f"edges={scene_meta['edges']}, obstacles={scene_meta['obstacles']}"
             )
+            self.procedural_waypoints_msg = self._build_waypoint_pose_array(scene_meta)
+            if self.procedural_waypoints_msg is not None:
+                self.get_logger().info(
+                    f"[INFO] Publishing mission with {len(self.procedural_waypoints_msg.poses)} ordered waypoints on /procedural_waypoints"
+                )
         else:
             if not os.path.isfile(xml_path):
                 raise FileNotFoundError(f"Cannot find MJCF: {xml_path}")
@@ -138,6 +148,13 @@ class MuJoCoSimulationNode(Node):
         self.imu_pub = self.create_publisher(ImuData, '/IMU_DATA', 200)
         self.joints_pub = self.create_publisher(JointsData, '/JOINTS_DATA', 200)
         self.odom_pub = self.create_publisher(Odometry, '/odom', 50)
+        waypoint_qos = QoSProfile(
+            history=QoSHistoryPolicy.KEEP_LAST,
+            depth=1,
+            reliability=QoSReliabilityPolicy.RELIABLE,
+            durability=QoSDurabilityPolicy.TRANSIENT_LOCAL,
+        )
+        self.waypoint_pub = self.create_publisher(PoseArray, '/procedural_waypoints', waypoint_qos)
 
         # TF Broadcasters
         self.tf_broadcaster = TransformBroadcaster(self)
@@ -153,13 +170,15 @@ class MuJoCoSimulationNode(Node):
 
         # 可视化
         self.viewer = None
-        if USE_VIEWER:
+        if use_viewer:
             self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
             # Point viewer camera at the robot's initial position
             self.viewer.cam.lookat[:] = [-5.0, 0.0, 0.3]
             self.viewer.cam.distance = 3.0
             self.viewer.cam.azimuth = 90.0
             self.viewer.cam.elevation = -20.0
+        else:
+            self.get_logger().info("[INFO] Running MuJoCo in headless mode (viewer disabled)")
 
         # LiDAR sensor
         self.lidar = LidarSensor(self.model, self.data, self, self.viewer)
@@ -171,6 +190,8 @@ class MuJoCoSimulationNode(Node):
 
         # Publish all static transforms in one call
         self._publish_static_transforms()
+        self._publish_procedural_waypoints()
+        self.waypoint_timer = self.create_timer(1.0, self._publish_procedural_waypoints)
 
     def _set_initial_pose(self, key: str):
         """关节位置设置为与 PyBullet 脚本一致的初始角度"""
@@ -192,6 +213,31 @@ class MuJoCoSimulationNode(Node):
 
     def _make_sim_stamp(self):
         return self.get_clock().now().to_msg()
+
+    def _build_waypoint_pose_array(self, scene_meta: dict) -> PoseArray | None:
+        mission_xy = scene_meta.get("mission_xy", [])
+        if not mission_xy:
+            return None
+
+        msg = PoseArray()
+        msg.header.frame_id = "odom"
+        msg.poses = []
+        for xy in mission_xy:
+            if len(xy) != 2:
+                continue
+            pose = Pose()
+            pose.position.x = float(xy[0])
+            pose.position.y = float(xy[1])
+            pose.position.z = 0.0
+            pose.orientation.w = 1.0
+            msg.poses.append(pose)
+        return msg if msg.poses else None
+
+    def _publish_procedural_waypoints(self):
+        if self.procedural_waypoints_msg is None:
+            return
+        self.procedural_waypoints_msg.header.stamp = self._make_sim_stamp()
+        self.waypoint_pub.publish(self.procedural_waypoints_msg)
 
     def _publish_odom_and_tf(self):
         stamp = self._make_sim_stamp()
