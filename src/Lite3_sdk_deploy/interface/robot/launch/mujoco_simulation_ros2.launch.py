@@ -29,13 +29,13 @@ def launch_setup(context, *args, **kwargs):
 
     if mode == 0:
         rtabmap_mode = "lidar"
-        rviz_filepath = f"{lite3_package_share}/config/mapping_lidar.rviz"
+        rviz_filepath = f"{lite3_package_share}/config/mapping_lidar_costmaps.rviz"
     elif mode == 1:
         rtabmap_mode = "rgbd"
-        rviz_filepath = f"{lite3_package_share}/config/mapping_rgbd.rviz"
+        rviz_filepath = f"{lite3_package_share}/config/mapping_rgbd_costmaps.rviz"
     else:
         rtabmap_mode = "rgbd_lidar"
-        rviz_filepath = f"{lite3_package_share}/config/mapping_rgbd_lidar.rviz"
+        rviz_filepath = f"{lite3_package_share}/config/mapping_rgbd_lidar_costmaps.rviz"
 
     rtabmap_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(f"{lite3_package_share}/launch/rtabmap_{rtabmap_mode}.launch.py"),
@@ -91,7 +91,7 @@ def generate_launch_description():
     return LaunchDescription([
         DeclareLaunchArgument("use_sim_time", default_value="false"),
         DeclareLaunchArgument("database_path", default_value="~/.ros/rtabmap.db"),
-        
+
         DeclareLaunchArgument(
             'mode', default_value='2',
             description='RTAB-Map mode: 0 (lidar), 1 (rgbd), 2 (lidar+rgbd). Default: 2'),
