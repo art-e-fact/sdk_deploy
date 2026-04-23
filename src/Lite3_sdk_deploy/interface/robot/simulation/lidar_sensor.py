@@ -24,6 +24,7 @@ NUM_RAYS = 360
 RANGE_MIN = 0.15  # RPLiDAR A2M8 spec
 RANGE_MAX = 8.0   # RPLiDAR A2M8 spec
 VISUALIZE_RAYS = False  # set to True to draw rays in the MuJoCo viewer (for debugging)
+
 RAY_VIS_HIT_RGBA = np.array([0.0, 1.0, 0.0, 0.3], dtype=np.float32)
 RAY_VIS_MISS_RGBA = np.array([0.0, 1.0, 0.0, 0.1], dtype=np.float32)
 RAY_VIS_WIDTH = 0.002  # line width in meters

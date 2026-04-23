@@ -8,6 +8,7 @@
 
 > **Tip:** A VS Code Dev Container config is included in `.devcontainer/`. Open the repo in VS Code and select **Reopen in Container** to get a pre-configured ROS 2 Humble environment with all dependencies (including GPU passthrough). This is optional — you can also install everything natively.
 
+
 ### System dependencies:
   ```bash
   sudo apt install libevdev-dev
@@ -58,6 +59,7 @@ ros2 launch lite3_sdk_deploy rtabmap.launch.py
 
 # Terminal 4 — RViz2
 rviz2 -d src/Lite3_sdk_deploy/config/mapping.rviz
+
 ```
 
 Stand the robot with "z" then put into RL control mode with "c". Drive the robot around with keyboard controls (wasd) to build the map.
@@ -93,6 +95,7 @@ rviz2 -d src/Lite3_sdk_deploy/config/navigation.rviz
 ```
 
 In RViz2: Set **2D Goal Pose** to send a navigation goal
+
 
 ## Twist Control (Simulation)
 
