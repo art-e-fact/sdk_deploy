@@ -132,17 +132,10 @@ install(PROGRAMS
   DESTINATION lib/${PROJECT_NAME}
 )
 
-install(DIRECTORY config/
-  DESTINATION share/${PROJECT_NAME}/config
-)
-
-install(FILES config/rtabmap_launch.py
-  DESTINATION share/${PROJECT_NAME}/launch
-  RENAME rtabmap.launch.py
-)
-install(FILES config/autonomous_mapping_launch.py
-  DESTINATION share/${PROJECT_NAME}/launch
-  RENAME autonomous_mapping.launch.py
+install(DIRECTORY 
+  config
+  interface/robot/launch
+  DESTINATION share/${PROJECT_NAME}
 )
 
 ament_package()
