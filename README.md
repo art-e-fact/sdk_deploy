@@ -7,6 +7,12 @@
 - **ROS 2 Humble** installed and sourced ([install guide](https://docs.ros.org/en/humble/Installation/Ubuntu-Install-Debs.html))
 
 > **Tip:** A VS Code Dev Container config is included in `.devcontainer/`. Open the repo in VS Code and select **Reopen in Container** to get a pre-configured ROS 2 Humble environment with all dependencies (including GPU passthrough). This is optional — you can also install everything natively.
+>
+> **X11 note (for MuJoCo/GLFW in devcontainer):** If simulation fails with errors like `X11: Failed to open display :0`, allow the container/root user to access your host X server before launching:
+> ```bash
+> xhost +si:localuser:root
+> ```
+> Run this on the host (outside the container) each new login/session.
 
 
 ### System dependencies:
@@ -43,8 +49,15 @@ Uses RTAB-Map (2D lidar ICP mode) for SLAM, then Nav2 for autonomous goal naviga
 
 ### 1. Build a Map (SLAM)
 
+- Using launch file:
 ```bash
-# Terminal 1 — MuJoCo simulation
+ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py mode:=2
+# RTAB-Map mode: 0 (lidar), 1 (rgbd), 2 (lidar+rgbd). Default: 2
+```
+
+- OR, run on separate terminals:
+```bash
+# Terminal 1 — MuJoCo simulation (see how to use a procedurally generated scene below)
 source install/setup.bash
 source venv/bin/activate
 ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
@@ -62,9 +75,48 @@ rviz2 -d src/Lite3_sdk_deploy/config/mapping.rviz
 
 ```
 
+### Optional: Procedural Scene (MuJoCo)
+
+By default, simulation uses the authored static scene. To generate the environment procedurally at runtime, use:
+
+```bash
+ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py --ros-args -p use_procedural_scene:=true
+```
+
+Optional seed for reproducible layouts:
+
+```bash
+ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py --ros-args \
+  -p use_procedural_scene:=true \
+  -p procedural_env_seed:=1234
+```
+
 Stand the robot with "z" then put into RL control mode with "c". Drive the robot around with keyboard controls (wasd) to build the map.
 
 The map is saved automatically to `~/.ros/rtabmap.db`. RTAB-Map will reload it in localization mode.
+
+### Optional: Autonomous Waypoint Traversal (Procedural Scene)
+
+You can automate exploration for map-building by launching the full stack in one command (MuJoCo + RL twist + waypoint navigator + RTAB-Map + RViz mapping config):
+
+```bash
+source install/setup.bash
+source venv/bin/activate
+ros2 launch lite3_sdk_deploy autonomous_mapping.launch.py mode:=2
+# RTAB-Map mode: 0 (lidar), 1 (rgbd), 2 (lidar+rgbd). Default: 2
+```
+
+Headless mode (MuJoCo viewer off and RViz disabled):
+
+```bash
+ros2 launch lite3_sdk_deploy autonomous_mapping.launch.py headless:=true mode:=2
+```
+
+
+Notes:
+- The waypoint mission is generated from the scene graph to traverse all free-space edges (some waypoints may be revisited by design).
+- This mode is a coverage helper and does not perform reactive obstacle avoidance beyond following the free-space corridors generated in the procedural map.
+- Waypoints are published on `/procedural_waypoints` (`geometry_msgs/PoseArray`, `odom` frame) and velocity commands are published on `/cmd_vel`.
 
 ### 2. Navigate with Nav2
 

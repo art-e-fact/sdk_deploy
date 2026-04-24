@@ -11,6 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3-colcon-common-extensions \
     python3-scipy \
     python3-pip \
+    python3-venv \
     xauth \
     && rm -rf /var/lib/apt/lists/*
 

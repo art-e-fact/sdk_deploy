@@ -24,8 +24,8 @@ HEIGHT = 480
 
 # Feature toggles (set False to save GPU/CPU)
 ENABLE_DEPTH = True
-ENABLE_COLOR = False
-ENABLE_POINTCLOUD = False  # requires ENABLE_DEPTH
+ENABLE_COLOR = True
+ENABLE_POINTCLOUD = True  # requires ENABLE_DEPTH
 
 # D435i depth specs
 DEPTH_RANGE_MIN = 0.105  # metres
