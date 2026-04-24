@@ -48,6 +48,13 @@ Uses RTAB-Map (2D lidar ICP mode) for SLAM, then Nav2 for autonomous goal naviga
 
 ### 1. Build a Map (SLAM)
 
+- Using launch file:
+```bash
+ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py mode:=2
+# RTAB-Map mode: 0 (lidar), 1 (rgbd), 2 (lidar+rgbd). Default: 2
+```
+
+- OR, run on separate terminals:
 ```bash
 # Terminal 1 — MuJoCo simulation (see how to use a procedurally generated scene below)
 source install/setup.bash
@@ -85,6 +92,29 @@ ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py --ros-args \
 Stand the robot with "z" then put into RL control mode with "c". Drive the robot around with keyboard controls (wasd) to build the map.
 
 The map is saved automatically to `~/.ros/rtabmap.db`. RTAB-Map will reload it in localization mode.
+
+### Optional: Autonomous Waypoint Traversal (Procedural Scene)
+
+You can automate exploration for map-building by launching the full stack in one command (MuJoCo + RL twist + waypoint navigator + RTAB-Map + RViz mapping config):
+
+```bash
+source install/setup.bash
+source venv/bin/activate
+ros2 launch lite3_sdk_deploy autonomous_mapping.launch.py mode:=2
+# RTAB-Map mode: 0 (lidar), 1 (rgbd), 2 (lidar+rgbd). Default: 2
+```
+
+Headless mode (MuJoCo viewer off and RViz disabled):
+
+```bash
+ros2 launch lite3_sdk_deploy autonomous_mapping.launch.py headless:=true mode:=2
+```
+
+
+Notes:
+- The waypoint mission is generated from the scene graph to traverse all free-space edges (some waypoints may be revisited by design).
+- This mode is a coverage helper and does not perform reactive obstacle avoidance beyond following the free-space corridors generated in the procedural map.
+- Waypoints are published on `/procedural_waypoints` (`geometry_msgs/PoseArray`, `odom` frame) and velocity commands are published on `/cmd_vel`.
 
 ### 2. Navigate with Nav2
 

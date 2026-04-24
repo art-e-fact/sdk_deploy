@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import List, Sequence, Tuple
+from functools import lru_cache
+from typing import Dict, List, Sequence, Tuple
 
 import mujoco
 import numpy as np
@@ -202,6 +203,144 @@ def _build_planar_edges(nodes: np.ndarray, cfg: GeneratorConfig) -> List[Tuple[i
     return edges
 
 
+def _all_pairs_shortest_paths(
+    nodes: np.ndarray,
+    edges: Sequence[Tuple[int, int]],
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Return distance and next-hop matrices (Floyd-Warshall)."""
+    n = len(nodes)
+    inf = float("inf")
+    dist = np.full((n, n), inf, dtype=np.float64)
+    nxt = np.full((n, n), -1, dtype=np.int32)
+    for i in range(n):
+        dist[i, i] = 0.0
+        nxt[i, i] = i
+    for i, j in edges:
+        w = float(np.linalg.norm(nodes[i] - nodes[j]))
+        if w < dist[i, j]:
+            dist[i, j] = w
+            dist[j, i] = w
+            nxt[i, j] = j
+            nxt[j, i] = i
+    for k in range(n):
+        for i in range(n):
+            dik = dist[i, k]
+            if not np.isfinite(dik):
+                continue
+            for j in range(n):
+                cand = dik + dist[k, j]
+                if cand < dist[i, j]:
+                    dist[i, j] = cand
+                    nxt[i, j] = nxt[i, k]
+    return dist, nxt
+
+
+def _reconstruct_shortest_path(u: int, v: int, nxt: np.ndarray) -> List[int]:
+    """Reconstruct shortest path from u to v (inclusive)."""
+    if nxt[u, v] < 0:
+        return []
+    path = [u]
+    while u != v:
+        u = int(nxt[u, v])
+        path.append(u)
+    return path
+
+
+def _minimum_weight_perfect_matching(odd_nodes: Sequence[int], dist: np.ndarray) -> List[Tuple[int, int]]:
+    """Solve minimum perfect matching on odd-degree nodes via bitmask DP."""
+    k = len(odd_nodes)
+    if k == 0:
+        return []
+    index_to_node = list(odd_nodes)
+
+    @lru_cache(maxsize=None)
+    def solve(mask: int) -> Tuple[float, Tuple[Tuple[int, int], ...]]:
+        if mask == 0:
+            return 0.0, tuple()
+        i = (mask & -mask).bit_length() - 1
+        best_cost = float("inf")
+        best_pairs: Tuple[Tuple[int, int], ...] = tuple()
+        mask_without_i = mask & ~(1 << i)
+        m = mask_without_i
+        while m:
+            j = (m & -m).bit_length() - 1
+            m &= ~(1 << j)
+            pair_cost = float(dist[index_to_node[i], index_to_node[j]])
+            rest_cost, rest_pairs = solve(mask_without_i & ~(1 << j))
+            total = pair_cost + rest_cost
+            if total < best_cost:
+                best_cost = total
+                best_pairs = ((index_to_node[i], index_to_node[j]),) + rest_pairs
+        return best_cost, best_pairs
+
+    _, pairs = solve((1 << k) - 1)
+    return list(pairs)
+
+
+def _build_edge_cover_mission(nodes: np.ndarray, edges: Sequence[Tuple[int, int]], start_idx: int = 0) -> List[int]:
+    """Compute a short mission that traverses all edges at least once.
+
+    Uses undirected Chinese Postman construction:
+      1) pair odd-degree nodes with minimum added shortest-path cost
+      2) duplicate those shortest paths to Eulerize the multigraph
+      3) run Hierholzer to obtain an Euler trail/circuit mission.
+    """
+    n = len(nodes)
+    if n == 0:
+        return []
+    if not edges:
+        return [start_idx]
+
+    degree = [0] * n
+    multiedge_counts: Dict[Tuple[int, int], int] = {}
+    for i, j in edges:
+        degree[i] += 1
+        degree[j] += 1
+        key = (i, j) if i < j else (j, i)
+        multiedge_counts[key] = multiedge_counts.get(key, 0) + 1
+
+    dist, nxt = _all_pairs_shortest_paths(nodes, edges)
+    odd_nodes = [idx for idx, d in enumerate(degree) if (d % 2) == 1]
+    for a, b in _minimum_weight_perfect_matching(odd_nodes, dist):
+        path = _reconstruct_shortest_path(a, b, nxt)
+        for u, v in zip(path, path[1:]):
+            key = (u, v) if u < v else (v, u)
+            multiedge_counts[key] = multiedge_counts.get(key, 0) + 1
+
+    edge_instances: List[Tuple[int, int]] = []
+    for (i, j), count in multiedge_counts.items():
+        edge_instances.extend([(i, j)] * count)
+
+    adjacency: List[List[int]] = [[] for _ in range(n)]
+    for edge_id, (i, j) in enumerate(edge_instances):
+        adjacency[i].append(edge_id)
+        adjacency[j].append(edge_id)
+
+    used = [False] * len(edge_instances)
+    next_ptr = [0] * n
+    stack: List[int] = [start_idx]
+    trail: List[int] = []
+    while stack:
+        v = stack[-1]
+        while next_ptr[v] < len(adjacency[v]) and used[adjacency[v][next_ptr[v]]]:
+            next_ptr[v] += 1
+        if next_ptr[v] >= len(adjacency[v]):
+            trail.append(v)
+            stack.pop()
+            continue
+        edge_id = adjacency[v][next_ptr[v]]
+        next_ptr[v] += 1
+        if used[edge_id]:
+            continue
+        used[edge_id] = True
+        a, b = edge_instances[edge_id]
+        nxt_v = b if v == a else a
+        stack.append(nxt_v)
+
+    trail.reverse()
+    return trail if trail else [start_idx]
+
+
 def _add_obstacle_geom(
     worldbody: mujoco.MjsBody,
     name: str,
@@ -259,7 +398,7 @@ def _populate_obstacles(
     rng: np.random.Generator,
     cfg: GeneratorConfig,
     robot_start_xy: Tuple[float, float],
-) -> Tuple[int, int, int]:
+) -> Tuple[np.ndarray, List[Tuple[int, int]], int]:
     """Populate random obstacles while preserving free-space corridors."""
     nodes = _sample_nodes(rng, cfg, robot_start_xy)
     edges = _build_planar_edges(nodes, cfg)
@@ -318,7 +457,7 @@ def _populate_obstacles(
 
         obstacle_idx += 1
 
-    return len(nodes), len(edges), obstacle_idx
+    return nodes, edges, obstacle_idx
 
 
 def build_procedural_spec(
@@ -352,14 +491,20 @@ def build_procedural_spec(
 
     _add_ground_plane(worldbody, cfg)
     _add_overhead_light(worldbody, cfg)
-    node_count, edge_count, obstacle_count = _populate_obstacles(
+    nodes, edges, obstacle_count = _populate_obstacles(
         worldbody, rng, cfg, robot_start_xy
     )
+    mission_node_idx = _build_edge_cover_mission(nodes, edges, start_idx=0)
+    node_xy = [[float(p[0]), float(p[1])] for p in nodes]
+    mission_xy = [[float(nodes[idx][0]), float(nodes[idx][1])] for idx in mission_node_idx]
 
     meta = {
         "seed": seed,
-        "nodes": node_count,
-        "edges": edge_count,
+        "nodes": len(nodes),
+        "edges": len(edges),
         "obstacles": obstacle_count,
+        "node_xy": node_xy,
+        "mission_node_idx": mission_node_idx,
+        "mission_xy": mission_xy,
     }
     return spec, meta
