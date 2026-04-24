@@ -136,6 +136,68 @@ ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
 | `angular.z`   | Turn left / right     | 0.7 rad/s |
 
 
+## Adding Custom Scenes
+
+Scenes live alongside the existing terrain files in:
+```
+src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/
+```
+
+**Step 1 – Add your scene assets**
+
+Copy your scene XML and its `meshes/` folder into that directory:
+```
+mjcf/
+  your_scene.xml
+  meshes/
+    visual/   ← .obj / texture files
+    collision/ ← collision .obj files
+```
+The XML's `meshdir` and `texturedir` should be relative to its own location, e.g.:
+```xml
+<compiler meshdir="meshes" texturedir="meshes/visual" .../>
+```
+
+**Step 2 – Use unique default class names**
+
+MuJoCo does not allow duplicate `default class` names across merged XMLs. Prefix yours so they don't clash with the Lite3 robot classes (`visual`, `collision`):
+```xml
+<default>
+  <default class="warehouse_visual">
+    <geom type="mesh" contype="0" conaffinity="0" group="2" density="0"/>
+  </default>
+  <default class="warehouse_collision">
+    <geom type="mesh" contype="1" conaffinity="1" group="3" condim="3"/>
+  </default>
+</default>
+```
+Update every `class="visual"` / `class="collision"` reference in the file to match.
+
+**Step 3 – Create a top-level entry XML**
+
+Create a new `Lite3_<yourscene>.xml` next to `Lite3_stair.xml`:
+```xml
+<mujoco model="Lite3_yourscene">
+    <include file="./Lite3.xml"/>
+    <include file="./your_scene.xml"/>
+</mujoco>
+```
+`scene.xml` (floor plane / lights) is optional — omit it if your scene provides its own floor and lighting.
+
+**Step 4 – Build and run**
+
+```bash
+colcon build --packages-select lite3_sdk_deploy
+source install/setup.bash
+ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py --xml \
+  src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/Lite3_yourscene.xml
+```
+
+> The existing `warehouse` scene is already set up following these steps and can serve as a reference:
+> `mjcf/Lite3_warehouse.xml` → `mjcf/warehouse.xml` + `mjcf/meshes/`
+
+---
+
 
 
 ## SDK Overview
