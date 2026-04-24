@@ -14,6 +14,7 @@ import time
 import socket
 import struct
 import threading
+import argparse
 import random
 from pathlib import Path
 from scipy.spatial.transform import Rotation
@@ -452,8 +453,19 @@ class MuJoCoSimulationNode(Node):
 
 if __name__ == "__main__":
     np.set_printoptions(precision=4, suppress=True)
-    rclpy.init()
-    sim_node = MuJoCoSimulationNode()
+    parser = argparse.ArgumentParser(description="Run Lite3 MuJoCo ROS2 simulation")
+    parser.add_argument(
+        "--xml",
+        dest="xml_path",
+        default=XML_PATH,
+        help="Path to top-level MuJoCo XML (default: Lite3_stair.xml)",
+    )
+    args, ros_args = parser.parse_known_args()
+
+    xml_path = str(Path(args.xml_path).expanduser().resolve())
+
+    rclpy.init(args=ros_args)
+    sim_node = MuJoCoSimulationNode(xml_path=xml_path)
     sim_node.start()
     sim_node.destroy_node()
     rclpy.shutdown()

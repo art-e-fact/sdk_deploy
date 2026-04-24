@@ -215,6 +215,65 @@ Resolution (`WIDTH`/`HEIGHT`) and publish rate (`*_FREQUENCY_HZ`) are also confi
 
 > **Note:** Currently, the color aligned depth topic is not published. In simulation, the two cameras are co-located so there is no need for alignment. We can publish the aligned depth topic to match how we interface with the real robot.
 
+## Adding Custom Scenes
+
+Scenes live alongside the existing terrain files in:
+```
+src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/
+```
+
+**Step 1 – Add your scene assets**
+
+Copy your scene XML and its `meshes/` folder into that directory:
+```
+mjcf/
+  your_scene.xml
+  meshes/
+    visual/   ← .obj / texture files
+    collision/ ← collision .obj files
+```
+The XML's `meshdir` and `texturedir` should be relative to its own location, e.g.:
+```xml
+<compiler meshdir="meshes" texturedir="meshes/visual" .../>
+```
+
+**Step 2 – Use unique default class names**
+
+MuJoCo does not allow duplicate `default class` names across merged XMLs. Prefix yours so they don't clash with the Lite3 robot classes (`visual`, `collision`):
+```xml
+<default>
+  <default class="warehouse_visual">
+    <geom type="mesh" contype="0" conaffinity="0" group="2" density="0"/>
+  </default>
+  <default class="warehouse_collision">
+    <geom type="mesh" contype="1" conaffinity="1" group="3" condim="3"/>
+  </default>
+</default>
+```
+Update every `class="visual"` / `class="collision"` reference in the file to match.
+
+**Step 3 – Create a top-level entry XML**
+
+Create a new `Lite3_<yourscene>.xml` in `src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf`:
+```xml
+<mujoco model="Lite3_yourscene">
+    <include file="./Lite3.xml"/>
+    <include file="./your_scene.xml"/>
+</mujoco>
+```
+
+**Step 4 – Build and run**
+
+```bash
+colcon build --packages-select lite3_sdk_deploy
+source install/setup.bash
+ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py --xml \
+  src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/Lite3_yourscene.xml
+```
+
+---
+
+
 ## SDK Overview
 This repository contains the robotics control SDK, currently supporting Lite3 and M20.
 
