@@ -175,14 +175,13 @@ Update every `class="visual"` / `class="collision"` reference in the file to mat
 
 **Step 3 – Create a top-level entry XML**
 
-Create a new `Lite3_<yourscene>.xml` next to `Lite3_stair.xml`:
+Create a new `Lite3_<yourscene>.xml` in `src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf`:
 ```xml
 <mujoco model="Lite3_yourscene">
     <include file="./Lite3.xml"/>
     <include file="./your_scene.xml"/>
 </mujoco>
 ```
-`scene.xml` (floor plane / lights) is optional — omit it if your scene provides its own floor and lighting.
 
 **Step 4 – Build and run**
 
@@ -193,12 +192,7 @@ ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py --xml \
   src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/Lite3_yourscene.xml
 ```
 
-> The existing `warehouse` scene is already set up following these steps and can serve as a reference:
-> `mjcf/Lite3_warehouse.xml` → `mjcf/warehouse.xml` + `mjcf/meshes/`
-
 ---
-
-
 
 ## SDK Overview
 This repository contains the robotics control SDK, currently supporting Lite3 and M20.
