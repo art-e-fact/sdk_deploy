@@ -113,6 +113,7 @@ class MuJoCoSimulationNode(Node):
             # Find the d435i_mount site on TORSO
             torso = spec.worldbody.first_body()
             mount_site = next(s for s in torso.sites if s.name == 'd435i_mount')
+            mount_site.pos = [0.25+0.01,  0.,   0.08] # move realsense a bit further forward to avoid capturing robot body
             spec.attach(d435i_spec, prefix='d435i-', site=mount_site)
             self.get_logger().info("[INFO] D435i model attached via mjSpec")
         else:
