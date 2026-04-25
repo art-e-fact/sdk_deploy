@@ -25,6 +25,7 @@ import mujoco.viewer
 from lidar_sensor import LidarSensor, LIDAR_FREQUENCY_HZ
 from depth_sensor import DepthSensor, DEPTH_FREQUENCY_HZ
 from procedural_scene_generator import build_procedural_spec
+from policy_runner import PolicyRunner, PolicyConfig
 
 import rclpy
 from rclpy.node import Node
@@ -78,6 +79,18 @@ class MuJoCoSimulationNode(Node):
         self.declare_parameter('use_procedural_scene', False)
         self.declare_parameter('procedural_env_seed', -1)
         self.declare_parameter('headless', False)
+        # Optional in-process ONNX policy (for sim-to-sim policy debugging).
+        self.declare_parameter('use_policy', False)
+        self.declare_parameter('policy_onnx_path', '')
+        self.declare_parameter('policy_decimation', 20)
+        self.declare_parameter('policy_action_delay_steps', 0)
+        self.declare_parameter('policy_kp', 30.0)
+        self.declare_parameter('policy_kd', 1.0)
+        self.declare_parameter('policy_ang_vel_scale', 0.25)
+        self.declare_parameter('policy_joint_vel_scale', 0.05)
+        self.declare_parameter('policy_joint_pos_scale', 1.0)
+        self.declare_parameter('policy_warmup_steps', 500)
+        self.declare_parameter('policy_debug_print', False)
         use_procedural_scene = bool(self.get_parameter('use_procedural_scene').value)
         configured_seed = int(self.get_parameter('procedural_env_seed').value)
         headless = bool(self.get_parameter('headless').value)
@@ -194,6 +207,26 @@ class MuJoCoSimulationNode(Node):
         self._publish_static_transforms()
         self._publish_procedural_waypoints()
         self.waypoint_timer = self.create_timer(1.0, self._publish_procedural_waypoints)
+
+        # Optional in-process policy runner. When enabled it owns actuation
+        # and consumes /cmd_vel directly, bypassing the SDK state machine.
+        self.policy_runner = None
+        if bool(self.get_parameter('use_policy').value):
+            onnx_path = str(self.get_parameter('policy_onnx_path').value)
+            cfg = PolicyConfig(
+                onnx_path=onnx_path,
+                decimation=int(self.get_parameter('policy_decimation').value),
+                action_delay_steps=int(self.get_parameter('policy_action_delay_steps').value),
+                kp=float(self.get_parameter('policy_kp').value),
+                kd=float(self.get_parameter('policy_kd').value),
+                ang_vel_scale=float(self.get_parameter('policy_ang_vel_scale').value),
+                joint_vel_scale=float(self.get_parameter('policy_joint_vel_scale').value),
+                joint_pos_scale=float(self.get_parameter('policy_joint_pos_scale').value),
+                warmup_steps=int(self.get_parameter('policy_warmup_steps').value),
+                debug_print=bool(self.get_parameter('policy_debug_print').value),
+            )
+            self.policy_runner = PolicyRunner(self, self.model, self.data, cfg)
+            self.get_logger().info('[INFO] In-process PolicyRunner enabled; SDK /JOINTS_CMD will be ignored.')
 
     def _set_initial_pose(self, key: str):
         """关节位置设置为与 PyBullet 脚本一致的初始角度"""
@@ -316,7 +349,11 @@ class MuJoCoSimulationNode(Node):
                 last_time = time.time()
                 step += 1
                 # 控制律
-                self._apply_joint_torque()
+                if self.policy_runner is not None:
+                    self.policy_runner.update(step)
+                    self.policy_runner.apply_torque()
+                else:
+                    self._apply_joint_torque()
                 # 模拟一步
                 mujoco.mj_step(self.model, self.data)
 
