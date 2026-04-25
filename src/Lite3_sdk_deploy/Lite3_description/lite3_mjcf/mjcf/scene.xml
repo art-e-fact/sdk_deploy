@@ -2190,7 +2190,6 @@
   <worldbody>
     <light diffuse=".5 .5 .5" pos="0 0 3" dir="0 0 -1"/>
     <body name="main_body" pos="-33 108 0">
-      <freejoint/>
       <geom type="mesh" mesh="mesh_1"/>
       <geom type="mesh" mesh="mesh_2"/>
       <geom type="mesh" mesh="mesh_3"/>
