@@ -134,6 +134,7 @@ install(PROGRAMS
 
 install(DIRECTORY 
   config
+  policy
   interface/robot/launch
   DESTINATION share/${PROJECT_NAME}
 )
