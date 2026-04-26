@@ -64,14 +64,14 @@ ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
 
 # Terminal 2 — RL controller (keyboard control for driving around to map)
 source install/setup.bash
-ros2 run lite3_sdk_deploy rl_deploy
+ros2 run lite3_sdk_deploy rl_deploy --twist
 
 # Terminal 3 — RTAB-Map SLAM
 source install/setup.bash
-ros2 launch lite3_sdk_deploy rtabmap.launch.py
+ros2 launch lite3_sdk_deploy rtabmap_rgbd_lidar.launch.py
 
 # Terminal 4 — RViz2
-rviz2 -d src/Lite3_sdk_deploy/config/mapping.rviz
+rviz2 -d src/Lite3_sdk_deploy/config/mapping_rgbd_lidar_costmaps.rviz
 
 ```
 
@@ -134,7 +134,7 @@ ros2 run lite3_sdk_deploy rl_deploy --twist
 
 # Terminal 3 — RTAB-Map in localization mode
 source install/setup.bash
-ros2 launch lite3_sdk_deploy rtabmap.launch.py localization:=true
+ros2 launch lite3_sdk_deploy rtabmap_rgbd_lidar.launch.py localization:=true
 
 # Terminal 4 — Navigation (planner + controller)
 source install/setup.bash
