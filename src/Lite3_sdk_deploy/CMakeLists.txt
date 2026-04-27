@@ -36,6 +36,22 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(drdds REQUIRED)
+find_package(geometry_msgs REQUIRED)
+
+if(NOT BUILD_PLATFORM STREQUAL "arm")
+  find_library(LIBEVDEV_LIBRARY evdev
+    PATHS /usr/lib /usr/lib/x86_64-linux-gnu
+    NO_DEFAULT_PATH
+  )
+  find_path(LIBEVDEV_INCLUDE_DIR libevdev-1.0/libevdev/libevdev.h
+    PATHS /usr/include
+    NO_DEFAULT_PATH
+  )
+  if(NOT LIBEVDEV_LIBRARY OR NOT LIBEVDEV_INCLUDE_DIR)
+    message(FATAL_ERROR "libevdev not found. Install with: sudo apt install libevdev-dev")
+  endif()
+  include_directories(${LIBEVDEV_INCLUDE_DIR})
+endif()
 
 set(THIRD_PARTY ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 
@@ -55,7 +71,7 @@ include_directories(
 add_subdirectory(interface)
 
 # 运行时路径设置
-set(CMAKE_EXE_LINKER_FLAGS "-Wl,--disable-new-dtags")
+set(CMAKE_EXE_LINKER_FLAGS "-Wl,--enable-new-dtags")
 set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
 set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
 
@@ -75,6 +91,7 @@ set_target_properties(onnxruntime PROPERTIES IMPORTED_LOCATION "${THIRD_PARTY}/o
 ament_target_dependencies(rl_deploy
   rclcpp
   drdds
+  geometry_msgs
 )
 if(BUILD_PLATFORM STREQUAL "arm")
   target_link_libraries(rl_deploy
@@ -96,7 +113,7 @@ else()
     -lrt
     -ldl
     -lstdc++
-    -levdev
+    ${LIBEVDEV_LIBRARY}
     # -ldw  启用backward调试功能需要libdw库
   )
 endif()
@@ -104,6 +121,21 @@ endif()
 
 install(TARGETS rl_deploy
   DESTINATION lib/${PROJECT_NAME}
+)
+
+# Install Python simulation scripts (runnable via: ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py)
+install(PROGRAMS
+  interface/robot/simulation/mujoco_simulation_ros2.py
+  interface/robot/simulation/lidar_sensor.py
+  interface/robot/simulation/depth_sensor.py
+  interface/robot/simulation/auto_waypoint_navigator.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY 
+  config
+  interface/robot/launch
+  DESTINATION share/${PROJECT_NAME}
 )
 
 ament_package()
