@@ -22,6 +22,7 @@ def launch_setup(context, *args, **kwargs):
 
     package_share = FindPackageShare("lite3_sdk_deploy").perform(context)
 
+    ## rtabmap modes
     if mode == 0:
         rtabmap_mode = "lidar"
         rviz_filepath = f"{package_share}/config/mapping_lidar.rviz"
@@ -32,15 +33,7 @@ def launch_setup(context, *args, **kwargs):
         rtabmap_mode = "rgbd_lidar"
         rviz_filepath = f"{package_share}/config/mapping_rgbd_lidar.rviz"
 
-    rtabmap_launch = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(f"{package_share}/launch/rtabmap_{rtabmap_mode}.launch.py"),
-        launch_arguments={
-            "use_sim_time": use_sim_time,
-            "localization": "false",
-            "database_path": database_path,
-        }.items(),
-    )
-
+    ## rl_deploy
     rl_deploy_prefix = ''
     if control_type == 0:
         rl_deploy_args = ["--twist"]
@@ -51,6 +44,7 @@ def launch_setup(context, *args, **kwargs):
         rl_deploy_args = ["--gamepad"]
     
     return [
+        # MuJoCo simulation
         Node(
             package="lite3_sdk_deploy",
             executable="mujoco_simulation_ros2.py",
@@ -61,6 +55,8 @@ def launch_setup(context, *args, **kwargs):
                 "headless": headless,
             }],
         ),
+
+        # RL controller
         Node(
             package="lite3_sdk_deploy",
             executable="rl_deploy",
@@ -68,12 +64,15 @@ def launch_setup(context, *args, **kwargs):
             arguments=rl_deploy_args,
             prefix=rl_deploy_prefix,
         ),
+
+        # Auto navigation
         Node(
             package="lite3_sdk_deploy",
             executable="auto_waypoint_navigator.py",
             output="screen",
         ),
-        rtabmap_launch,
+        
+        # Rviz
         Node(
             package="rviz2",
             executable="rviz2",
@@ -83,6 +82,16 @@ def launch_setup(context, *args, **kwargs):
                 PythonExpression(["'", use_rviz, "' == 'true' and '", headless, "' != 'true'"])
             ),
         ),
+
+        # RTAB-Map launch
+        IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(f"{package_share}/launch/rtabmap_{rtabmap_mode}.launch.py"),
+            launch_arguments={
+                "use_sim_time": use_sim_time,
+                "localization": str(localization).lower(),
+                "database_path": database_path,
+            }.items(),
+        )
     ]
 
 
@@ -104,7 +113,7 @@ def generate_launch_description():
 
             DeclareLaunchArgument(
                 'localization', 
-                default_value='true',
+                default_value='false',
                 description='Launch in localization mode.'
             ),
 
