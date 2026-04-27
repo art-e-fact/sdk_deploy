@@ -19,6 +19,7 @@
 #include "keyboard_interface.hpp"
 #include "retroid_gamepad_interface.hpp"
 #include "hardware/lite3_interface.hpp"
+#include "joints_data_shadow_subscriber.hpp"
 
 namespace q{
 class QStateMachine : public StateMachineBase{
@@ -28,6 +29,7 @@ private:
     std::shared_ptr<StateBase> standup_controller_;
     std::shared_ptr<StateBase> rl_controller_;
     std::shared_ptr<StateBase> joint_damping_controller_;
+    std::shared_ptr<JointsDataShadowSubscriber> joints_data_shadow_subscriber_;
     // std::shared_ptr<StateBase> car_move_controller_;
 
 public:
@@ -44,6 +46,8 @@ public:
         if(robot_name_ == RobotName::Lite3){
             ri_ptr_ = std::make_shared<Lite3Interface>("Lite3");
             cp_ptr_ = std::make_shared<ControlParameters>(robot_name_);
+            joints_data_shadow_subscriber_ =
+                std::make_shared<JointsDataShadowSubscriber>(ri_ptr_->get_node());
         }
 
         // 创建用户命令接口

@@ -11,6 +11,7 @@
 #pragma once
 
 #include "sdk_service.hpp"
+#include "sdk_service_trace.hpp"
 #include "drdds/srv/std_srv_int32.hpp"
 
 #include <sys/types.h>
@@ -24,9 +25,12 @@
 #include <cstring>
 #include <string>
 #include <algorithm>
+#include <cctype>
 #include <chrono>
+#include <iomanip>
 #include <thread>
 #include <future>
+#include <sstream>
 
 /**
  * @brief Lite3 SDK control service implementation
@@ -49,6 +53,15 @@ private:
     rclcpp::Client<drdds::srv::StdSrvInt32>::SharedPtr estop_client_;
     int udp_sockfd_;
     int udp_port_;
+    uint64_t udp_cmd_trace_seq_{0};
+
+    struct CommandTraceContext {
+        uint64_t trace_id{0};
+        std::string client_addr;
+        std::string raw_cmd;
+        std::string normalized_cmd;
+        bool active{false};
+    } cmd_trace_ctx_;
 
     /**
      * @brief Trim whitespace from string
@@ -102,6 +115,67 @@ private:
         return std::string(ip_str) + ":" + std::to_string(ntohs(addr.sin_port));
     }
 
+    static std::string sanitize_for_log(const std::string& input) {
+        std::ostringstream oss;
+        for (unsigned char ch : input) {
+            switch (ch) {
+                case '\n':
+                    oss << "\\n";
+                    break;
+                case '\r':
+                    oss << "\\r";
+                    break;
+                case '\t':
+                    oss << "\\t";
+                    break;
+                default:
+                    if (std::isprint(ch)) {
+                        oss << static_cast<char>(ch);
+                    } else {
+                        oss << "\\x" << std::hex << std::setw(2) << std::setfill('0')
+                            << static_cast<unsigned>(ch) << std::dec << std::setfill(' ');
+                    }
+                    break;
+            }
+        }
+        return oss.str();
+    }
+
+    void begin_command_trace(uint64_t trace_id, const std::string& client_addr, const std::string& raw_cmd) {
+        cmd_trace_ctx_.trace_id = trace_id;
+        cmd_trace_ctx_.client_addr = client_addr;
+        cmd_trace_ctx_.raw_cmd = raw_cmd;
+        cmd_trace_ctx_.normalized_cmd.clear();
+        cmd_trace_ctx_.active = true;
+    }
+
+    void set_normalized_command(const std::string& normalized_cmd) {
+        if (cmd_trace_ctx_.active) {
+            cmd_trace_ctx_.normalized_cmd = normalized_cmd;
+        }
+    }
+
+    void clear_command_trace() {
+        cmd_trace_ctx_ = CommandTraceContext{};
+    }
+
+    void trace_event(const std::string& tag, const std::string& message) {
+        std::ostringstream oss;
+        if (cmd_trace_ctx_.active) {
+            oss << "trace_id=" << cmd_trace_ctx_.trace_id
+                << " client=" << cmd_trace_ctx_.client_addr;
+            if (!cmd_trace_ctx_.normalized_cmd.empty()) {
+                oss << " cmd='" << sanitize_for_log(cmd_trace_ctx_.normalized_cmd) << "'";
+            } else if (!cmd_trace_ctx_.raw_cmd.empty()) {
+                oss << " raw='" << sanitize_for_log(cmd_trace_ctx_.raw_cmd) << "'";
+            }
+            oss << " " << message;
+        } else {
+            oss << message;
+        }
+        sdk_service_trace::LogEvent(get_logger(), tag, oss.str());
+    }
+
 public:
     Lite3SdkService() : lite3_pid_(-1), udp_sockfd_(-1), udp_port_(DEFAULT_UDP_PORT) {}
 
@@ -114,6 +188,8 @@ public:
         client_ = node_->create_client<drdds::srv::StdSrvInt32>("/SDK_MODE");
         estop_client_ = node_->create_client<drdds::srv::StdSrvInt32>("/EMERGENCY_STOP");
         RCLCPP_INFO(get_logger(), "Lite3SdkService initialized");
+        trace_event("[SDK-SERVICE]",
+                    "Initialized ROS clients: /SDK_MODE and /EMERGENCY_STOP");
     }
 
     bool StartNode() override {
@@ -347,17 +423,21 @@ public:
     bool SendEmergencyStop() {
         if (!estop_client_) {
             RCLCPP_ERROR(get_logger(), "Emergency stop client not initialized");
+            trace_event("[ESTOP-SVC][2/6]", "ERROR: /EMERGENCY_STOP client not initialized");
             return false;
         }
 
         using namespace std::chrono_literals;
+        trace_event("[ESTOP-SVC][2/6]", "Waiting for /EMERGENCY_STOP service");
         if (!estop_client_->wait_for_service(1s)) {
             RCLCPP_ERROR(get_logger(), "Service /EMERGENCY_STOP not available");
+            trace_event("[ESTOP-SVC][2/6]", "ERROR: /EMERGENCY_STOP service not available within 1s");
             return false;
         }
 
         auto request = std::make_shared<drdds::srv::StdSrvInt32::Request>();
         request->command = 0;
+        trace_event("[ESTOP-SVC][3/6]", "Calling /EMERGENCY_STOP with request.command=0");
         auto future = estop_client_->async_send_request(request);
 
         auto timeout = std::chrono::milliseconds(SERVICE_TIMEOUT_MS);
@@ -372,14 +452,37 @@ public:
             if (status == std::future_status::ready) {
                 try {
                     auto response = future.get();
-                    return response && response->result == 0;
+                    const auto elapsed_ms =
+                        std::chrono::duration_cast<std::chrono::milliseconds>(
+                            std::chrono::steady_clock::now() - start_time)
+                            .count();
+                    if (!response) {
+                        trace_event("[ESTOP-SVC][3/6]", "ERROR: /EMERGENCY_STOP returned empty response");
+                        return false;
+                    }
+
+                    {
+                        std::ostringstream oss;
+                        oss << "/EMERGENCY_STOP response result=" << response->result
+                            << " elapsed_ms=" << elapsed_ms;
+                        trace_event("[ESTOP-SVC][3/6]", oss.str());
+                    }
+                    return response->result == 0;
                 } catch (const std::exception& e) {
                     RCLCPP_ERROR(get_logger(), "Exception getting /EMERGENCY_STOP response: %s", e.what());
+                    trace_event("[ESTOP-SVC][3/6]",
+                                std::string("ERROR: exception waiting /EMERGENCY_STOP response: ") + e.what());
                     return false;
                 }
             }
             if (std::chrono::steady_clock::now() - start_time >= timeout) {
                 RCLCPP_ERROR(get_logger(), "/EMERGENCY_STOP service call timed out");
+                {
+                    std::ostringstream oss;
+                    oss << "ERROR: /EMERGENCY_STOP service call timed out after "
+                        << SERVICE_TIMEOUT_MS << " ms";
+                    trace_event("[ESTOP-SVC][3/6]", oss.str());
+                }
                 return false;
             }
         }
@@ -405,6 +508,14 @@ public:
                       [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
 
         RCLCPP_DEBUG(get_logger(), "Processing command: '%s'", lower_cmd.c_str());
+        set_normalized_command(lower_cmd);
+        {
+            std::ostringstream oss;
+            oss << "Normalized UDP command from raw='" << sanitize_for_log(cmd)
+                << "' to trimmed='" << sanitize_for_log(trimmed)
+                << "' lower='" << sanitize_for_log(lower_cmd) << "'";
+            trace_event("[SDK-UDP][2/6]", oss.str());
+        }
 
         // Handle "on" command
         if (lower_cmd == "on") {
@@ -422,6 +533,7 @@ public:
 
         // Handle "estop" command: send 0x21010C0E emergency stop to robot via /EMERGENCY_STOP service
         if (lower_cmd == "estop") {
+            trace_event("[ESTOP-SVC][1/6]", "Recognized UDP command 'estop'");
             bool ok = SendEmergencyStop();
             RCLCPP_WARN(get_logger(), "Command 'estop' result: %s", ok ? "success" : "failure");
             return ok ? "success" : "failure";
@@ -483,6 +595,11 @@ public:
         }
 
         RCLCPP_INFO(get_logger(), "UDP socket initialized, listening on port %d", udp_port_);
+        {
+            std::ostringstream oss;
+            oss << "UDP socket bound on 0.0.0.0:" << udp_port_;
+            trace_event("[SDK-UDP]", oss.str());
+        }
         return true;
     }
 
@@ -522,17 +639,28 @@ public:
             buffer[len] = '\0';
 
             // Validate command length
+            std::string client_addr = get_client_address(remote_addr);
+            const uint64_t trace_id = ++udp_cmd_trace_seq_;
+            begin_command_trace(trace_id, client_addr, std::string(buffer, len));
+            {
+                std::ostringstream oss;
+                oss << "recvfrom bytes=" << len
+                    << " raw_payload='" << sanitize_for_log(std::string(buffer, len)) << "'";
+                trace_event("[SDK-UDP][1/6]", oss.str());
+            }
+
             if (len > static_cast<ssize_t>(MAX_CMD_LENGTH)) {
                 RCLCPP_WARN(get_logger(), "Command too long: %zd bytes (max: %zu) from %s",
-                           len, MAX_CMD_LENGTH, get_client_address(remote_addr).c_str());
+                           len, MAX_CMD_LENGTH, client_addr.c_str());
                 std::string reply = "invalid";
+                trace_event("[SDK-UDP][6/6]", "Packet too long, replying 'invalid'");
                 sendto(udp_sockfd_, reply.c_str(), reply.size(), 0,
                        reinterpret_cast<sockaddr*>(&remote_addr), remote_len);
+                clear_command_trace();
                 continue;
             }
 
             std::string cmd(buffer, len);
-            std::string client_addr = get_client_address(remote_addr);
             RCLCPP_DEBUG(get_logger(), "Received command from %s: '%s'", client_addr.c_str(), cmd.c_str());
 
             // Process command through service
@@ -541,6 +669,8 @@ public:
                 reply = ProcessCommand(cmd);
             } catch (const std::exception& e) {
                 RCLCPP_ERROR(get_logger(), "Exception processing command '%s': %s", cmd.c_str(), e.what());
+                trace_event("[SDK-UDP][5/6]",
+                            std::string("ERROR: exception while processing command: ") + e.what());
                 reply = "failure";
             }
 
@@ -549,9 +679,18 @@ public:
                                  reinterpret_cast<sockaddr*>(&remote_addr), remote_len);
             if (sent < 0) {
                 RCLCPP_ERROR(get_logger(), "sendto() failed: %s", strerror(errno));
+                trace_event("[SDK-UDP][6/6]",
+                            std::string("ERROR: sendto reply failed: ") + strerror(errno));
             } else {
                 RCLCPP_DEBUG(get_logger(), "Sent reply to %s: '%s'", client_addr.c_str(), reply.c_str());
+                {
+                    std::ostringstream oss;
+                    oss << "UDP reply sent bytes=" << sent
+                        << " reply='" << sanitize_for_log(reply) << "'";
+                    trace_event("[SDK-UDP][6/6]", oss.str());
+                }
             }
+            clear_command_trace();
 
             // Spin ROS2 once to handle callbacks (non-blocking)
             if (node_) {

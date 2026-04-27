@@ -16,6 +16,9 @@
 #include <atomic>
 #include <memory>
 #include <chrono>
+#include <cstdio>
+
+#include "topic_trace.hpp"
 
 /**
  * @brief Base class for gamepad interfaces
@@ -27,6 +30,8 @@ protected:
     rclcpp::Publisher<drdds::msg::GamepadData>::SharedPtr gamepad_pub_;
     std::thread publish_thread_;
     std::atomic<bool> running_{false};
+    uint64_t gamepad_pub_seq_{0};
+    topic_trace::TraceState gamepad_pub_trace_;
 
 public:
     /**
@@ -70,11 +75,36 @@ public:
      *          It can be overridden if custom publishing logic is needed
      */
     virtual void PublishGamepadData() {
+        uint16_t last_buttons = 0;
+        bool first_msg = true;
         while (running_) {
             auto msg = GetGamepadData();
-            msg.header.stamp = this->now();            
+            msg.header.frame_id = ++gamepad_pub_seq_;
+            msg.header.stamp = this->now();
+
+            // Log every button state change (estop button tracing)
+            if (first_msg || msg.buttons != last_buttons) {
+                if (topic_trace::IsEstopTraceEnabled()) {
+                    char buf[128];
+                    snprintf(buf, sizeof(buf),
+                        "Gamepad button state: 0x%04X -> 0x%04X (seq=%llu)",
+                        last_buttons,
+                        static_cast<unsigned>(msg.buttons),
+                        static_cast<unsigned long long>(gamepad_pub_seq_));
+                    topic_trace::LogEstopEvent(this->get_logger(), "[ESTOP-UDP]", buf);
+                }
+                last_buttons = msg.buttons;
+                first_msg = false;
+            }
+
+            topic_trace::LogEvent(
+                this->get_logger(),
+                gamepad_pub_trace_,
+                "PUB /GAMEPAD_DATA",
+                rclcpp::Time(msg.header.stamp).seconds(),
+                msg.header.frame_id);
             gamepad_pub_->publish(msg);
-            
+
             std::this_thread::sleep_for(std::chrono::milliseconds(5)); // 200Hz 发布频率
         }
     }

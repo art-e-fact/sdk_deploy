@@ -20,6 +20,7 @@
 #include "drdds/msg/joints_data_cmd.hpp"
 #include "drdds/msg/imu_data.hpp"
 #include "drdds/msg/battery_data.hpp"
+#include "topic_trace.hpp"
 
 using namespace dds;
 
@@ -53,6 +54,9 @@ protected:
     rclcpp::Subscription<drdds::msg::JointsData>::SharedPtr joint_data_sub_;
     rclcpp::Subscription<drdds::msg::ImuData>::SharedPtr imu_data_sub_;
     rclcpp::Subscription<drdds::msg::BatteryData>::SharedPtr health_data_sub_;
+    uint64_t joints_cmd_pub_seq_{0};
+    topic_trace::TraceState joints_cmd_pub_trace_;
+    topic_trace::TraceState joints_data_sub_trace_;
 
 
     bool IsDataUpdatedFinished() {
@@ -207,7 +211,14 @@ public:
     virtual void SetJointCommand(Eigen::Matrix<float, Eigen::Dynamic, 5> input) {
         joint_cmd_ = input;
         auto msg = drdds::msg::JointsDataCmd();
+        msg.header.frame_id = ++joints_cmd_pub_seq_;
         msg.header.stamp = node_->now();  // 设置时间戳，避免延迟计算异常
+        topic_trace::LogEvent(
+            node_->get_logger(),
+            joints_cmd_pub_trace_,
+            "PUB /JOINTS_CMD",
+            rclcpp::Time(msg.header.stamp).seconds(),
+            msg.header.frame_id);
 
         for (int i = 0; i < dof_num_; ++i) {
             msg.data.joints_data[i].position =
@@ -250,6 +261,12 @@ public:
     }
 
     virtual void Handler(const drdds::msg::JointsData::SharedPtr msg) {
+        topic_trace::LogEvent(
+            node_->get_logger(),
+            joints_data_sub_trace_,
+            "SUB /JOINTS_DATA",
+            rclcpp::Time(msg->header.stamp).seconds(),
+            msg->header.frame_id);
         ++run_cnt_;
         for (int i = 0; i < dof_num_; ++i) {
             joint_pos_(i) = msg->data.joints_data[i].position * joint_dir_[i] + pos_offset_[i] / 180. * M_PI;

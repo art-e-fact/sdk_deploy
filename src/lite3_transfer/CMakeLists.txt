@@ -10,6 +10,7 @@ add_compile_options(-fPIC)
 
 # ROS2 dependencies
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(drdds REQUIRED)
 
@@ -75,6 +76,7 @@ add_executable(lite3_transfer main.cpp ${GAMEPAD_SOURCES})
 
 # ROS2依赖
 ament_target_dependencies(lite3_transfer
+  ament_index_cpp
   rclcpp
   drdds
 )
@@ -96,6 +98,10 @@ install(TARGETS lite3_transfer
 # 安装SDK库
 install(FILES ${SDK_LIB_PATH}
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY config/
+  DESTINATION share/${PROJECT_NAME}/config
 )
 
 # 设置RPATH

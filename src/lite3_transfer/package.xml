@@ -13,6 +13,7 @@
   <buildtool_depend>ament_cmake</buildtool_depend>
 
   <!-- 运行 & 编译依赖 -->
+  <depend>ament_index_cpp</depend>
   <depend>rclcpp</depend>
   <depend>drdds</depend>
 

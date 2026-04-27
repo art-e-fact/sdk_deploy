@@ -34,6 +34,7 @@ endif()
 
 # 查找依赖包
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(drdds REQUIRED)
 
@@ -73,6 +74,7 @@ add_library(onnxruntime SHARED IMPORTED)
 set_target_properties(onnxruntime PROPERTIES IMPORTED_LOCATION "${THIRD_PARTY}/onnxruntime//${BUILD_PLATFORM}/lib/libonnxruntime.so")
 
 ament_target_dependencies(rl_deploy
+  ament_index_cpp
   rclcpp
   drdds
 )
@@ -101,9 +103,12 @@ else()
   )
 endif()
 
-
 install(TARGETS rl_deploy
   DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY config/
+  DESTINATION share/${PROJECT_NAME}/config
 )
 
 ament_package()

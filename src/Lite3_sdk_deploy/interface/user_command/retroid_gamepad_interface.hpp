@@ -19,6 +19,8 @@
 #include <stdexcept>
 #include <cstring>
 
+#include "topic_trace.hpp"
+
 using namespace interface;
 using namespace types;
 
@@ -52,12 +54,19 @@ private:
     
     uint16_t last_buttons_ = 0;
     bool first_message_ = true;
+    topic_trace::TraceState gamepad_sub_trace_;
 
     bool IsKeysEqual(uint16_t a, uint16_t b) {
         return a == b;
     }
 
     void GamepadDataCallback(const drdds::msg::GamepadData::SharedPtr msg) {
+        topic_trace::LogEvent(
+            node_->get_logger(),
+            gamepad_sub_trace_,
+            "SUB /GAMEPAD_DATA",
+            rclcpp::Time(msg->header.stamp).seconds(),
+            msg->header.frame_id);
         static bool first_callback = true;
         if (first_callback) {
             RCLCPP_INFO(node_->get_logger(), "First message received! Gamepad Subscription is working.");
@@ -111,8 +120,14 @@ private:
 
             // 双摇杆按键 -> Joint Damping
             if (left_axis_button && right_axis_button) {
+                char buf[64];
+                snprintf(buf, sizeof(buf),
+                    "Both joystick buttons pressed (buttons=0x%04X) -> JointDamping",
+                    static_cast<unsigned>(msg->buttons));
+                topic_trace::LogEstopEvent(node_->get_logger(), "[ESTOP-BTN]", buf);
                 usr_cmd_->target_mode = uint8_t(RobotMotionState::JointDamping);
-                RCLCPP_INFO(node_->get_logger(), "Mode: Joint Damping");
+                topic_trace::LogEstopEvent(node_->get_logger(), "[ESTOP-BTN]",
+                    "target_mode set to JointDamping via button press");
             }
 
             last_buttons_ = msg->buttons;
@@ -177,4 +192,3 @@ public:
         return node_;
     }
 };
-

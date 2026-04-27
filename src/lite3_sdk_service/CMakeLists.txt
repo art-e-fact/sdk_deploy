@@ -9,6 +9,7 @@ add_definitions(-w)
 add_compile_options(-fPIC)
 
 find_package(ament_cmake REQUIRED)
+find_package(ament_index_cpp REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(drdds REQUIRED)
 
@@ -22,6 +23,7 @@ add_executable(sdk_service
 )
 
 ament_target_dependencies(sdk_service
+  ament_index_cpp
   rclcpp
   drdds
 )
@@ -30,5 +32,8 @@ install(TARGETS sdk_service
   DESTINATION lib/${PROJECT_NAME}
 )
 
-ament_package()
+install(DIRECTORY config/
+  DESTINATION share/${PROJECT_NAME}/config
+)
 
+ament_package()

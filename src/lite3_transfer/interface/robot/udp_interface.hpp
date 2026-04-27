@@ -27,6 +27,8 @@
 #include <array>
 #include <chrono>
 
+#include "topic_trace.hpp"
+
 // using namespace lite3;
 
 class HardwareInterface : public interface::RobotInterface,
@@ -61,15 +63,23 @@ private:
     rclcpp::Service<drdds::srv::StdSrvInt32>::SharedPtr emergency_stop_service_;
     std::mutex rate_mutex_;  // 保护 publish_rate_ 和 timer 的线程安全
     std::mutex cmd_mutex_;   // 保护 robot_joint_cmd_ 的线程安全
+    uint64_t joints_data_pub_seq_{0};
+    topic_trace::TraceState joints_data_pub_trace_;
+    topic_trace::TraceState joints_cmd_sub_trace_;
 
     // /EMERGENCY_STOP service callback
     void EmergencyStopCallback(
-        const std::shared_ptr<drdds::srv::StdSrvInt32::Request> /*request*/,
+        const std::shared_ptr<drdds::srv::StdSrvInt32::Request> request,
         std::shared_ptr<drdds::srv::StdSrvInt32::Response> response)
     {
-        RCLCPP_WARN(get_logger(), "Emergency stop received! Sending 0x21010C0E to robot.");
+        char buf[256];
+        snprintf(buf, sizeof(buf),
+            "/EMERGENCY_STOP service called: cmd=%d, /EMERGENCY_STOP_SIGNAL subscriber_count=%zu",
+            request->command, estop_signal_pub_->get_subscription_count());
+        topic_trace::LogEstopEvent(get_logger(), "[ESTOP][1/4]", buf);
         EmergencyStop();
         response->result = 0;
+        topic_trace::LogEstopEvent(get_logger(), "[ESTOP][1/4]", "Service response sent: result=0");
     }
 
     // /SDK_MODE service callback
@@ -202,15 +212,34 @@ public:
     }
 
     virtual void EmergencyStop(){
-        // 1. 硬件层：向机器人固件发送原始急停命令码
+        // 2. 硬件层：向机器人固件发送原始急停命令码
         if (sender_ != nullptr) {
+            topic_trace::LogEstopEvent(get_logger(), "[ESTOP][2/4]",
+                "Sending cmd=0x21010C0E to robot firmware via UDP");
             sender_->SetCmd(0x21010C0E, 0);
+            topic_trace::LogEstopEvent(get_logger(), "[ESTOP][2/4]", "UDP cmd 0x21010C0E sent");
+        } else {
+            topic_trace::LogEstopEvent(get_logger(), "[ESTOP][2/4]",
+                "ERROR: sender_ is nullptr! Cannot send firmware cmd");
         }
-        // 2. 状态机层：跨进程通知 Lite3_sdk_deploy 切换至 JointDamping 状态
-        //    由 StateMachineBase 订阅 /EMERGENCY_STOP_SIGNAL 并调用 joint_damping_state 处理阻尼
+
+        // 3. 状态机层：跨进程通知 Lite3_sdk_deploy 切换至 JointDamping 状态
+        size_t sub_cnt = estop_signal_pub_->get_subscription_count();
+        {
+            char buf[128];
+            snprintf(buf, sizeof(buf),
+                "Publishing /EMERGENCY_STOP_SIGNAL (subscriber_count=%zu)", sub_cnt);
+            topic_trace::LogEstopEvent(get_logger(), "[ESTOP][3/4]", buf);
+        }
+        if (sub_cnt == 0) {
+            topic_trace::LogEstopEvent(get_logger(), "[ESTOP][3/4]",
+                "ERROR: No subscriber on /EMERGENCY_STOP_SIGNAL! "
+                "sdk_deploy not ready or InitEmergencyStopListener() not yet called");
+        }
         drdds::msg::StdMsgInt32 sig;
         sig.value = 1;
         estop_signal_pub_->publish(sig);
+        topic_trace::LogEstopEvent(get_logger(), "[ESTOP][3/4]", "/EMERGENCY_STOP_SIGNAL published");
     }
 
     virtual double GetInterfaceTimeStamp(){
@@ -265,6 +294,12 @@ public:
     }
 
     virtual void SetJointCommand(const drdds::msg::JointsDataCmd::SharedPtr msg){
+        topic_trace::LogEvent(
+            get_logger(),
+            joints_cmd_sub_trace_,
+            "SUB /JOINTS_CMD",
+            rclcpp::Time(msg->header.stamp).seconds(),
+            msg->header.frame_id);
         // 更新命令数据（加锁保护，避免与定时器回调冲突）
         std::lock_guard<std::mutex> lock(cmd_mutex_);
         for(int i=0;i<dof_num_;++i){
@@ -283,7 +318,14 @@ public:
         auto tau = GetJointTorque();
 
         drdds::msg::JointsData msg;
+        msg.header.frame_id = ++joints_data_pub_seq_;
         msg.header.stamp = this->now();
+        topic_trace::LogEvent(
+            get_logger(),
+            joints_data_pub_trace_,
+            "PUB /JOINTS_DATA",
+            rclcpp::Time(msg.header.stamp).seconds(),
+            msg.header.frame_id);
         // msg.header.frame_id = 0;
         for(int i=0;i<dof_num_;++i){
             // msg.data.joints_data[i].name = JOINT_NAMES[i];
@@ -315,5 +357,4 @@ public:
         imu_data_pub_->publish(msg);
     }
 };
-
 

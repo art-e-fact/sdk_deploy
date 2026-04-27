@@ -57,6 +57,12 @@ public:
 
 // 在 Lite3Interface 类中添加
     virtual void Handler(const drdds::msg::JointsData::SharedPtr msg) override {
+        topic_trace::LogEvent(
+            node_->get_logger(),
+            joints_data_sub_trace_,
+            "SUB /JOINTS_DATA",
+            rclcpp::Time(msg->header.stamp).seconds(),
+            msg->header.frame_id);
         ++run_cnt_;
         for (int i = 0; i < dof_num_; ++i) {
             joint_pos_(i) = msg->data.joints_data[i].position;
@@ -71,8 +77,16 @@ public:
     }
 
     virtual void SetJointCommand(Eigen::Matrix<float, Eigen::Dynamic, 5> input) {
+        joint_cmd_ = input;
         auto msg = drdds::msg::JointsDataCmd();
+        msg.header.frame_id = ++joints_cmd_pub_seq_;
         msg.header.stamp = node_->now();  // 设置时间戳，避免延迟计算异常
+        topic_trace::LogEvent(
+            node_->get_logger(),
+            joints_cmd_pub_trace_,
+            "PUB /JOINTS_CMD",
+            rclcpp::Time(msg.header.stamp).seconds(),
+            msg.header.frame_id);
         for (int i = 0; i < dof_num_; ++i) {
             msg.data.joints_data[i].position = input(i, 1);
             msg.data.joints_data[i].velocity = input(i, 3);
@@ -86,4 +100,3 @@ public:
     }
 
 };
-
