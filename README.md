@@ -51,29 +51,21 @@ Uses RTAB-Map (2D lidar ICP mode) for SLAM, then Nav2 for autonomous goal naviga
 
 - Using launch file:
 ```bash
-ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py mode:=2
-# RTAB-Map mode: 0 (lidar), 1 (rgbd), 2 (lidar+rgbd). Default: 2
+ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py mode:=2 control_type:=0
 ```
+- Arguments:
+  - `mode`: RTAB-Map mode (0 - lidar, 1 - rgbd, 2 - lidar+rgbd). Default: 2.
+  - `control_type`: Joints controller type for RL policy (0 - twist, 1 - keyboard, 2 - gamepad). Default: 0.
 
-- OR, run on separate terminals:
+### 2. Navigate with Nav2
+
+After building a map, use RTAB-Map in localization mode with Nav2 for autonomous navigation:
+
 ```bash
-# Terminal 1 — MuJoCo simulation (see how to use a procedurally generated scene below)
-source install/setup.bash
-source venv/bin/activate
-ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
-
-# Terminal 2 — RL controller (keyboard control for driving around to map)
-source install/setup.bash
-ros2 run lite3_sdk_deploy rl_deploy --twist
-
-# Terminal 3 — RTAB-Map SLAM
-source install/setup.bash
-ros2 launch lite3_sdk_deploy rtabmap_rgbd_lidar.launch.py
-
-# Terminal 4 — RViz2
-rviz2 -d src/Lite3_sdk_deploy/config/mapping_rgbd_lidar_costmaps.rviz
-
+ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py mode:=2 control_type:=0 localization:=true
 ```
+
+In RViz2: Set **2D Goal Pose** to send a navigation goal
 
 ### Optional: Procedural Scene (MuJoCo)
 
@@ -102,14 +94,13 @@ You can automate exploration for map-building by launching the full stack in one
 ```bash
 source install/setup.bash
 source venv/bin/activate
-ros2 launch lite3_sdk_deploy autonomous_mapping.launch.py mode:=2
-# RTAB-Map mode: 0 (lidar), 1 (rgbd), 2 (lidar+rgbd). Default: 2
+ros2 launch lite3_sdk_deploy autonomous_mapping.launch.py mode:=2 control_type:=0
 ```
 
 Headless mode (MuJoCo viewer off and RViz disabled):
 
 ```bash
-ros2 launch lite3_sdk_deploy autonomous_mapping.launch.py headless:=true mode:=2
+ros2 launch lite3_sdk_deploy autonomous_mapping.launch.py headless:=true mode:=2 control_type:=0
 ```
 
 
@@ -117,36 +108,6 @@ Notes:
 - The waypoint mission is generated from the scene graph to traverse all free-space edges (some waypoints may be revisited by design).
 - This mode is a coverage helper and does not perform reactive obstacle avoidance beyond following the free-space corridors generated in the procedural map.
 - Waypoints are published on `/procedural_waypoints` (`geometry_msgs/PoseArray`, `odom` frame) and velocity commands are published on `/cmd_vel`.
-
-### 2. Navigate with Nav2
-
-After building a map, use RTAB-Map in localization mode with Nav2 for autonomous navigation:
-
-```bash
-# Terminal 1 — MuJoCo simulation
-source install/setup.bash
-source venv/bin/activate
-ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
-
-# Terminal 2 — RL controller with twist input
-source install/setup.bash
-ros2 run lite3_sdk_deploy rl_deploy --twist
-
-# Terminal 3 — RTAB-Map in localization mode
-source install/setup.bash
-ros2 launch lite3_sdk_deploy rtabmap_rgbd_lidar.launch.py localization:=true
-
-# Terminal 4 — Navigation (planner + controller)
-source install/setup.bash
-ros2 launch nav2_bringup navigation_launch.py \
-  params_file:=$(pwd)/src/Lite3_sdk_deploy/config/nav2_params.yaml
-
-# Terminal 5 — RViz2
-source install/setup.bash
-rviz2 -d src/Lite3_sdk_deploy/config/navigation.rviz
-```
-
-In RViz2: Set **2D Goal Pose** to send a navigation goal
 
 
 ## Twist Control (Simulation)

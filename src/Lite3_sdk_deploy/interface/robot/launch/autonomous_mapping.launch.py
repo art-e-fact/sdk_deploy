@@ -18,7 +18,8 @@ def launch_setup(context, *args, **kwargs):
     mode = int(LaunchConfiguration('mode').perform(context))
     localization = LaunchConfiguration('localization').perform(context)
     localization = localization.lower() == 'true'
-    
+    control_type = int(LaunchConfiguration('control_type').perform(context))
+
     package_share = FindPackageShare("lite3_sdk_deploy").perform(context)
 
     if mode == 0:
@@ -39,6 +40,15 @@ def launch_setup(context, *args, **kwargs):
             "database_path": database_path,
         }.items(),
     )
+
+    rl_deploy_prefix = ''
+    if control_type == 0:
+        rl_deploy_args = ["--twist"]
+    elif control_type == 1:
+        rl_deploy_args = []
+        rl_deploy_prefix = 'xterm -e'
+    else:
+        rl_deploy_args = ["--gamepad"]
     
     return [
         Node(
@@ -55,7 +65,8 @@ def launch_setup(context, *args, **kwargs):
             package="lite3_sdk_deploy",
             executable="rl_deploy",
             output="screen",
-            arguments=["--twist"],
+            arguments=rl_deploy_args,
+            prefix=rl_deploy_prefix,
         ),
         Node(
             package="lite3_sdk_deploy",
@@ -87,15 +98,19 @@ def generate_launch_description():
             DeclareLaunchArgument("database_path", default_value="~/.ros/rtabmap.db"),
 
             DeclareLaunchArgument(
-                'mode', 
-                default_value='2',
-                description='RTAB-Map mode: 0 (lidar), 1 (rgbd), 2 (lidar+rgbd). Default: 2'
+                'mode', default_value='2',
+                description='RTAB-Map mode: 0 (lidar), 1 (rgbd), 2 (lidar+rgbd)'
             ),
 
             DeclareLaunchArgument(
                 'localization', 
                 default_value='true',
                 description='Launch in localization mode.'
+            ),
+
+            DeclareLaunchArgument(
+                'control_type', default_value='0',
+                description='Joints control type: 0 (twist), 1 (keyboard), 2 (gamepad)'
             ),
 
             DeclareLaunchArgument(

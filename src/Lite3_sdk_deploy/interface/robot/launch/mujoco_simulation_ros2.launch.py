@@ -11,6 +11,7 @@ def launch_setup(context, *args, **kwargs):
     mode = int(LaunchConfiguration('mode').perform(context))
     localization = LaunchConfiguration('localization').perform(context)
     localization = localization == 'True' or localization == 'true'
+    control_type = int(LaunchConfiguration('control_type').perform(context))
     nav2_params_filepath_launch_arg = LaunchConfiguration('nav2_params_filepath')
     use_sim_time = LaunchConfiguration("use_sim_time")
     database_path = LaunchConfiguration("database_path")
@@ -41,10 +42,19 @@ def launch_setup(context, *args, **kwargs):
         PythonLaunchDescriptionSource(f"{lite3_package_share}/launch/rtabmap_{rtabmap_mode}.launch.py"),
         launch_arguments={
             "use_sim_time": use_sim_time,
-            "localization": "false",
+            "localization": localization,
             "database_path": database_path,
         }.items(),
     )
+
+    rl_deploy_prefix = ''
+    if control_type == 0:
+        rl_deploy_args = ["--twist"]
+    elif control_type == 1:
+        rl_deploy_args = []
+        rl_deploy_prefix = 'xterm -e'
+    else:
+        rl_deploy_args = ["--gamepad"]
 
     return [
 
@@ -64,7 +74,8 @@ def launch_setup(context, *args, **kwargs):
             package='lite3_sdk_deploy', 
             executable='rl_deploy',
             output='screen',
-            arguments=['--twist']
+            arguments=rl_deploy_args,
+            prefix=rl_deploy_prefix,
         ),
 
         # RTAB-Map
@@ -94,11 +105,18 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             'mode', default_value='2',
-            description='RTAB-Map mode: 0 (lidar), 1 (rgbd), 2 (lidar+rgbd). Default: 2'),
+            description='RTAB-Map mode: 0 (lidar), 1 (rgbd), 2 (lidar+rgbd)'
+        ),
 
         DeclareLaunchArgument(
-            'localization', default_value='true',
-            description='Launch in localization mode.'),
+            'localization', default_value='false',
+            description='Launch in localization mode.'
+        ),
+
+        DeclareLaunchArgument(
+            'control_type', default_value='0',
+            description='Joints control type: 0 (twist), 1 (keyboard), 2 (gamepad)'
+        ),
 
         DeclareLaunchArgument(
             'nav2_params_filepath',
