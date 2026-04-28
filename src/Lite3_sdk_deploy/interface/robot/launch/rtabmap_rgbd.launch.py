@@ -1,18 +1,19 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch.conditions import IfCondition
 from launch_ros.actions import Node
 
 
-def generate_launch_description():
+def launch_setup(context, *args, **kwargs):
     headless = LaunchConfiguration("headless")
     use_rtabmap_rviz = LaunchConfiguration("use_rtabmap_rviz")
     use_sim_time = LaunchConfiguration('use_sim_time')
-    database_path = LaunchConfiguration('database_path')
-    localization = LaunchConfiguration('localization')
-    localization = localization == 'True' or localization == 'true'
-
+    database_path = LaunchConfiguration('database_path').perform(context)
+    localization = LaunchConfiguration('localization').perform(context)
+    localization = localization.lower() == 'true'
+    max_ground_height = LaunchConfiguration('max_ground_height').perform(context)
+    max_ground_angle = LaunchConfiguration('max_ground_angle').perform(context)
     arguments = []
 
     parameters = {
@@ -35,7 +36,10 @@ def generate_launch_description():
         'Grid/RangeMin': '0.3',  # ignore laser hits on the robot body
         'Grid/RangeMax': '12.0',  # match RPLiDAR A2M8 max range
         'Grid/CellSize': '0.05', # Resolution of the occupancy grid.
-        'Grid/MaxGroundHeight': '0.0', #'0.05', #'0.2', # Maximum ground height (0=disabled).
+        
+        'Grid/MaxGroundHeight': max_ground_height, # Anything below this limit won't be considered as obstacles
+        'Grid/MaxGroundAngle': max_ground_angle, # Maximum angle (degrees) between point's normal to ground's normal to label it as ground. Points with higher angle difference are considered as obstacles.
+        
         # 'Grid/MaxObstacleHeight': '5.0', # Maximum obstacles height (0=disabled).     
         # 'Grid/3D': 'true',
         
@@ -79,16 +83,8 @@ def generate_launch_description():
         ('depth/image', '/camera/depth/image_rect_raw'),
     ]
 
-    return LaunchDescription([
-        DeclareLaunchArgument("headless", default_value="false"),
-        DeclareLaunchArgument("use_rtabmap_rviz", default_value="false"),
-        DeclareLaunchArgument('use_sim_time', default_value='false'),
-        DeclareLaunchArgument('localization', default_value='false',
-                              description='Set to true to run in localization mode (reuse existing map)'),
-        DeclareLaunchArgument('database_path', default_value='~/.ros/rtabmap.db',
-                              description='Path to RTAB-Map database file'),
-
-        # RTAB-Map SLAM node (2D lidar only, ICP odometry)
+    return [
+        # RTAB-Map SLAM node
         Node(
             package='rtabmap_slam',
             executable='rtabmap',
@@ -99,6 +95,7 @@ def generate_launch_description():
             arguments=arguments
         ),
 
+        # (Optional) RTAB-Map Visualization
         Node(
             package='rtabmap_viz',
             executable='rtabmap_viz',
@@ -111,4 +108,18 @@ def generate_launch_description():
                 PythonExpression(["'", use_rtabmap_rviz, "' == 'true' and '", headless, "' != 'true'"])
             ),
         ),
+    ]
+
+def generate_launch_description():
+    return LaunchDescription([
+        DeclareLaunchArgument("headless", default_value="false"),
+        DeclareLaunchArgument("use_rtabmap_rviz", default_value="false"),
+        DeclareLaunchArgument('use_sim_time', default_value='false'),
+        DeclareLaunchArgument('localization', default_value='false',
+                              description='Set to true to run in localization mode (reuse existing map)'),
+        DeclareLaunchArgument('database_path', default_value='~/.ros/rtabmap.db',
+                              description='Path to RTAB-Map database file'),
+        DeclareLaunchArgument('max_ground_height', default_value='0.0'),
+        DeclareLaunchArgument('max_ground_angle', default_value='45'),
+        OpaqueFunction(function=launch_setup)
     ])
