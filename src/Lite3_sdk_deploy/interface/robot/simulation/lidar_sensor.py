@@ -14,8 +14,6 @@ from geometry_msgs.msg import TransformStamped, Quaternion, Vector3
 from scipy.spatial.transform import Rotation as R_scipy
 
 # -- LiDAR configuration --
-ENABLE_LIDAR = True  # set False to skip ray casting and publishing
-
 LIDAR_SITE_NAME = "lidar_site"
 LIDAR_FRAME_ID = "lidar"
 LIDAR_TOPIC = "/scan"
@@ -31,17 +29,30 @@ RAY_VIS_WIDTH = 0.002  # line width in meters
 
 
 class LidarSensor:
+    @staticmethod
+    def configure_spec(spec):
+        """Make the lidar_site visible as a small cylinder marker.
+
+        Call on the MjSpec before compile() when LiDAR is enabled.
+        """
+        torso = spec.worldbody.first_body()
+        site = next(s for s in torso.sites if s.name == LIDAR_SITE_NAME)
+        site.type = mujoco.mjtGeom.mjGEOM_CYLINDER
+        site.size = [0.025, 0.01, 0.0]
+        site.rgba = [0.1, 0.1, 0.1, 1.0]
+        site.group = 2
+
     def __init__(self, model: mujoco.MjModel, data: mujoco.MjData,
-                 node: Node, viewer=None):
+                 node: Node, viewer=None, enabled: bool = False):
         self.model = model
         self.data = data
         self.node = node
         self.viewer = viewer
-        self.enabled = ENABLE_LIDAR
+        self.enabled = enabled
         self.site_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_SITE, LIDAR_SITE_NAME)
 
         if not self.enabled:
-            node.get_logger().info("[INFO] LiDAR disabled (ENABLE_LIDAR=False)")
+            node.get_logger().info("[INFO] LiDAR disabled")
             return
 
         if self.site_id < 0:
@@ -173,7 +184,7 @@ class LidarSensor:
     def get_static_transforms(self, stamp):
         """Return base_link -> lidar TF, read from MuJoCo model."""
         transforms = []
-        if self.site_id < 0:
+        if not self.enabled or self.site_id < 0:
             return transforms
 
         # Compute lidar pose relative to TORSO (base_link) via world-frame data

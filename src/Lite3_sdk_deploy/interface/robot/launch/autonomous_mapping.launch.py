@@ -14,6 +14,7 @@ def launch_setup(context, *args, **kwargs):
     use_rviz = LaunchConfiguration("use_rviz")
     use_sim_time = LaunchConfiguration("use_sim_time")
     database_path = LaunchConfiguration("database_path")
+    enable_pointcloud = LaunchConfiguration("enable_pointcloud")
 
     mode = int(LaunchConfiguration('mode').perform(context))
     localization = LaunchConfiguration('localization').perform(context)
@@ -26,12 +27,21 @@ def launch_setup(context, *args, **kwargs):
     if mode == 0:
         rtabmap_mode = "lidar"
         rviz_filepath = f"{package_share}/config/mapping_lidar.rviz"
+        enable_lidar = True
+        enable_depth = False
+        enable_color = False
     elif mode == 1:
         rtabmap_mode = "rgbd"
         rviz_filepath = f"{package_share}/config/mapping_rgbd.rviz"
+        enable_lidar = False
+        enable_depth = True
+        enable_color = True
     else:
         rtabmap_mode = "rgbd_lidar"
         rviz_filepath = f"{package_share}/config/mapping_rgbd_lidar.rviz"
+        enable_lidar = True
+        enable_depth = True
+        enable_color = True
 
     ## rl_deploy
     rl_deploy_prefix = ''
@@ -53,6 +63,10 @@ def launch_setup(context, *args, **kwargs):
                 "use_procedural_scene": use_procedural_scene,
                 "procedural_env_seed": procedural_env_seed,
                 "headless": headless,
+                "enable_lidar": enable_lidar,
+                "enable_depth": enable_depth,
+                "enable_color": enable_color,
+                "enable_pointcloud": enable_pointcloud,
             }],
         ),
 
@@ -109,6 +123,11 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 'mode', default_value='2',
                 description='RTAB-Map mode: 0 (lidar), 1 (rgbd), 2 (lidar+rgbd)'
+            ),
+
+            DeclareLaunchArgument(
+                'enable_pointcloud', default_value='false',
+                description='Publish RealSense pointcloud (debug; off by default)'
             ),
 
             DeclareLaunchArgument(

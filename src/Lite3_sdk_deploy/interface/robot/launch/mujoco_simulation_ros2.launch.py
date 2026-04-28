@@ -33,12 +33,24 @@ def launch_setup(context, *args, **kwargs):
     if mode == 0:
         rtabmap_mode = "lidar"
         rviz_filepath = f"{lite3_package_share}/config/mapping_lidar_costmaps.rviz"
+        enable_lidar = True
+        enable_depth = False
+        enable_color = False
     elif mode == 1:
         rtabmap_mode = "rgbd"
         rviz_filepath = f"{lite3_package_share}/config/mapping_rgbd_costmaps.rviz"
+        enable_lidar = False
+        enable_depth = True
+        enable_color = True
     else:
         rtabmap_mode = "rgbd_lidar"
         rviz_filepath = f"{lite3_package_share}/config/mapping_rgbd_lidar_costmaps.rviz"
+        enable_lidar = True
+        enable_depth = True
+        enable_color = True
+
+
+    enable_pointcloud = LaunchConfiguration('enable_pointcloud').perform(context).lower() == 'true'
 
     rtabmap_args = {
         "use_sim_time": use_sim_time,
@@ -57,7 +69,12 @@ def launch_setup(context, *args, **kwargs):
         rl_deploy_args = ["--gamepad"]
 
     ## scene
-    mujoco_simulation_ros2_params = {}
+    mujoco_simulation_ros2_params = {
+        "enable_lidar": enable_lidar,
+        "enable_depth": enable_depth,
+        "enable_color": enable_color,
+        "enable_pointcloud": enable_pointcloud,
+    }
 
     if scene_id == 0:
         mujoco_simulation_ros2_params["use_procedural_scene"] = False
@@ -116,6 +133,11 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'mode', default_value='2',
             description='RTAB-Map mode: 0 (lidar), 1 (rgbd), 2 (lidar+rgbd)'
+        ),
+
+        DeclareLaunchArgument(
+            'enable_pointcloud', default_value='false',
+            description='Publish RealSense pointcloud (debug; off by default)'
         ),
 
         DeclareLaunchArgument(

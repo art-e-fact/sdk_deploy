@@ -22,11 +22,6 @@ DEPTH_FREQUENCY_HZ = 15.0
 WIDTH = 640
 HEIGHT = 480
 
-# Feature toggles (set False to save GPU/CPU)
-ENABLE_DEPTH = True
-ENABLE_COLOR = True
-ENABLE_POINTCLOUD = True  # requires ENABLE_DEPTH
-
 # D435i depth specs
 DEPTH_RANGE_MIN = 0.105  # metres
 DEPTH_RANGE_MAX = 10.0   # metres
@@ -88,25 +83,52 @@ def _make_camera_info(fx, fy, cx, cy, width, height, frame_id):
 
 
 class DepthSensor:
+    @staticmethod
+    def configure_spec(spec, d435i_xml_path):
+        """Attach the D435i body to the TORSO d435i_mount site.
+
+        Call on the MjSpec before compile() when any RealSense output
+        (depth/color/pointcloud) is enabled.
+        """
+        d435i_spec = mujoco.MjSpec.from_file(d435i_xml_path)
+        torso = spec.worldbody.first_body()
+        mount_site = next(s for s in torso.sites if s.name == 'd435i_mount')
+        # Move realsense a bit further forward to avoid capturing robot body
+        mount_site.pos = [0.25 + 0.01, 0.0, 0.08]
+        spec.attach(d435i_spec, prefix='d435i-', site=mount_site)
+
     def __init__(self, model: mujoco.MjModel, data: mujoco.MjData,
-                 node: Node, viewer=None):
+                 node: Node, viewer=None,
+                 enable_depth: bool = False,
+                 enable_color: bool = False,
+                 enable_pointcloud: bool = False):
         self.model = model
         self.data = data
         self.node = node
+
+        if enable_pointcloud and not enable_depth:
+            raise ValueError("enable_pointcloud requires enable_depth")
+
+        self.enable_depth = enable_depth
+        self.enable_color = enable_color
+        self.enable_pointcloud = enable_pointcloud
+        self.enabled = enable_depth or enable_color
+
+        if not self.enabled:
+            self.depth_cam_id = -1
+            self.color_cam_id = -1
+            node.get_logger().info("[INFO] D435i depth sensor disabled")
+            return
 
         # Look up camera IDs
         self.depth_cam_id = mujoco.mj_name2id(
             model, mujoco.mjtObj.mjOBJ_CAMERA, DEPTH_CAMERA_NAME)
         self.color_cam_id = mujoco.mj_name2id(
             model, mujoco.mjtObj.mjOBJ_CAMERA, COLOR_CAMERA_NAME)
-        if ENABLE_DEPTH and self.depth_cam_id < 0:
+        if self.enable_depth and self.depth_cam_id < 0:
             raise ValueError(f"Camera '{DEPTH_CAMERA_NAME}' not found in model")
-        if ENABLE_COLOR and self.color_cam_id < 0:
+        if self.enable_color and self.color_cam_id < 0:
             raise ValueError(f"Camera '{COLOR_CAMERA_NAME}' not found in model")
-
-        self.enable_depth = ENABLE_DEPTH
-        self.enable_color = ENABLE_COLOR
-        self.enable_pointcloud = ENABLE_POINTCLOUD and ENABLE_DEPTH
 
         # Offscreen renderers (only allocate what's needed)
         self.depth_renderer = (
@@ -154,6 +176,8 @@ class DepthSensor:
 
     def update(self, timestamp: float):
         """Render depth + color and publish enabled topics."""
+        if not self.enabled:
+            return
         stamp = self.node.get_clock().now().to_msg()
         depth_m = None
         rgb_buf = None
