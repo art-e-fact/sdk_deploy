@@ -51,6 +51,7 @@ def launch_setup(context, *args, **kwargs):
 
 
     enable_pointcloud = LaunchConfiguration('enable_pointcloud').perform(context).lower() == 'true'
+    enable_mid360 = LaunchConfiguration('enable_mid360').perform(context).lower() == 'true'
 
     rtabmap_args = {
         "use_sim_time": use_sim_time,
@@ -71,6 +72,7 @@ def launch_setup(context, *args, **kwargs):
     ## scene
     mujoco_simulation_ros2_params = {
         "enable_lidar": enable_lidar,
+        "enable_mid360": enable_mid360,
         "enable_depth": enable_depth,
         "enable_color": enable_color,
         "enable_pointcloud": enable_pointcloud,
@@ -138,6 +140,11 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'enable_pointcloud', default_value='false',
             description='Publish RealSense pointcloud (debug; off by default)'
+        ),
+
+        DeclareLaunchArgument(
+            'enable_mid360', default_value='false',
+            description='Publish Mid360 pointcloud (off by default)'
         ),
 
         DeclareLaunchArgument(
