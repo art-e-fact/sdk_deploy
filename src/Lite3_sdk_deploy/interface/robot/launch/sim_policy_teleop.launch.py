@@ -1,5 +1,5 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
@@ -17,6 +17,12 @@ def launch_setup(context, *args, **kwargs):
     enable_depth = LaunchConfiguration("enable_depth")
     enable_color = LaunchConfiguration("enable_color")
     enable_pointcloud = LaunchConfiguration("enable_pointcloud")
+    enable_heightmap = LaunchConfiguration("enable_heightmap")
+
+    enable_mid360_value = enable_mid360.perform(context).lower() == "true"
+    enable_depth_value = enable_depth.perform(context).lower() == "true"
+    enable_pointcloud_value = enable_pointcloud.perform(context).lower() == "true"
+    enable_heightmap_value = enable_heightmap.perform(context).lower() == "true"
 
     use_keyboard_teleop = LaunchConfiguration("use_keyboard_teleop")
     use_joy_teleop = LaunchConfiguration("use_joy_teleop")
@@ -25,10 +31,16 @@ def launch_setup(context, *args, **kwargs):
         FindPackageShare("lite3_sdk_deploy"), "config", "f310_holonomic.yaml"
     ])
     rviz_config = PathJoinSubstitution([
-        FindPackageShare("lite3_sdk_deploy"), "config", "mapping_lidar.rviz"
+        FindPackageShare("lite3_sdk_deploy"), "config", "teleop.rviz"
     ])
 
-    return [
+    heightmap_cloud_topic = None
+    if enable_mid360_value:
+        heightmap_cloud_topic = "/mid360/points"
+    elif enable_depth_value and enable_pointcloud_value:
+        heightmap_cloud_topic = "/camera/depth/color/points"
+
+    actions = [
         Node(
             package="lite3_sdk_deploy",
             executable="mujoco_simulation_ros2.py",
@@ -44,7 +56,35 @@ def launch_setup(context, *args, **kwargs):
                 "enable_pointcloud": enable_pointcloud,
             }],
         ),
+    ]
 
+    if enable_heightmap_value and heightmap_cloud_topic is not None:
+        actions.append(
+            Node(
+                package="simple_local_heightmap",
+                executable="local_heightmap_node",
+                name="local_heightmap_node",
+                output="screen",
+                parameters=[{
+                    "cloud_topic": heightmap_cloud_topic,
+                    "map_frame": "base_link",
+                    "resolution": 0.025,
+                    "length_x": 8.0,
+                    "length_y": 8.0,
+                }],
+            )
+        )
+    elif enable_heightmap_value:
+        actions.append(
+            LogInfo(
+                msg=(
+                    "simple_local_heightmap not started: enable_mid360:=true or "
+                    "enable_depth:=true enable_pointcloud:=true is required"
+                )
+            )
+        )
+
+    actions.extend([
         Node(
             package="lite3_sdk_deploy",
             executable="rl_deploy",
@@ -96,7 +136,9 @@ def launch_setup(context, *args, **kwargs):
                 ])
             ),
         ),
-    ]
+    ])
+
+    return actions
 
 
 def generate_launch_description():
@@ -111,6 +153,11 @@ def generate_launch_description():
         DeclareLaunchArgument("enable_depth", default_value="false"),
         DeclareLaunchArgument("enable_color", default_value="false"),
         DeclareLaunchArgument("enable_pointcloud", default_value="false"),
+        DeclareLaunchArgument(
+            "enable_heightmap",
+            default_value="false",
+            description="Launch the simple local heightmap node for Mid360 testing",
+        ),
 
         DeclareLaunchArgument(
             "use_keyboard_teleop",
