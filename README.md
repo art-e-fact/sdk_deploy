@@ -67,19 +67,19 @@ ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py mode:=2 control_ty
 
 In RViz2: Set **2D Goal Pose** to send a navigation goal
 
-### Optional: Procedural Scene (MuJoCo)
+### Optional: Generated Scenes (MuJoCo)
 
-By default, simulation uses the authored static scene. To generate the environment procedurally at runtime, use:
+By default, simulation uses the authored static scene. To generate a scene at runtime, choose a `scene_type`:
 
 ```bash
-ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py --ros-args -p use_procedural_scene:=true
+ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py --ros-args -p scene_type:=shapes
 ```
 
-Optional seed for reproducible layouts:
+Use `scene_type:=railroad` for the railroad generator. Optional seed for reproducible layouts:
 
 ```bash
 ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py --ros-args \
-  -p use_procedural_scene:=true \
+  -p scene_type:=railroad \
   -p procedural_env_seed:=1234
 ```
 
@@ -105,8 +105,9 @@ ros2 launch lite3_sdk_deploy autonomous_mapping.launch.py headless:=true mode:=2
 
 
 Notes:
-- The waypoint mission is generated from the scene graph to traverse all free-space edges (some waypoints may be revisited by design).
-- This mode is a coverage helper and does not perform reactive obstacle avoidance beyond following the free-space corridors generated in the procedural map.
+- In `scene_type:=shapes`, the waypoint mission is generated from the scene graph to traverse all free-space edges, so some waypoints may be revisited by design.
+- In `scene_type:=railroad`, waypoints follow only the first main rail line.
+- This mode is a coverage helper and does not perform reactive obstacle avoidance beyond following the generated route.
 - Waypoints are published on `/procedural_waypoints` (`geometry_msgs/PoseArray`, `odom` frame) and velocity commands are published on `/cmd_vel`.
 
 

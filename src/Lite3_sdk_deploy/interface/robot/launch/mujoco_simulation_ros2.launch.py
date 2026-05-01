@@ -79,11 +79,14 @@ def launch_setup(context, *args, **kwargs):
     }
 
     if scene_id == 0:
-        mujoco_simulation_ros2_params["use_procedural_scene"] = False
+        mujoco_simulation_ros2_params["scene_type"] = "static"
         rtabmap_args["max_ground_height"] = '0.3'
         rtabmap_args["max_ground_angle"] = '60'
     elif scene_id == 1:
-        mujoco_simulation_ros2_params["use_procedural_scene"] = True
+        mujoco_simulation_ros2_params["scene_type"] = "shapes"
+        mujoco_simulation_ros2_params["procedural_env_seed"] = 1234
+    elif scene_id == 2:
+        mujoco_simulation_ros2_params["scene_type"] = "railroad"
         mujoco_simulation_ros2_params["procedural_env_seed"] = 1234
 
     return [
@@ -177,7 +180,7 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             'scene_id', default_value='0',
-            description='Specify scene to launch: 0 (deeprobotics scene), 1 (procedural scene).'
+            description='Specify scene to launch: 0 (static), 1 (shapes), 2 (railroad).'
         ),
 
         OpaqueFunction(function=launch_setup)

@@ -8,7 +8,7 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def launch_setup(context, *args, **kwargs):
-    use_procedural_scene = LaunchConfiguration("use_procedural_scene")
+    scene_type = LaunchConfiguration("scene_type")
     procedural_env_seed = LaunchConfiguration("procedural_env_seed")
     headless = LaunchConfiguration("headless")
     use_rviz = LaunchConfiguration("use_rviz")
@@ -61,7 +61,7 @@ def launch_setup(context, *args, **kwargs):
             executable="mujoco_simulation_ros2.py",
             output="screen",
             parameters=[{
-                "use_procedural_scene": use_procedural_scene,
+                "scene_type": scene_type,
                 "procedural_env_seed": procedural_env_seed,
                 "headless": headless,
                 "enable_lidar": enable_lidar,
@@ -115,7 +115,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            DeclareLaunchArgument("use_procedural_scene", default_value="true"),
+            DeclareLaunchArgument("scene_type", default_value="shapes"),
             DeclareLaunchArgument("procedural_env_seed", default_value="-1"),
             DeclareLaunchArgument("headless", default_value="false"),
             DeclareLaunchArgument("use_rviz", default_value="true"),
