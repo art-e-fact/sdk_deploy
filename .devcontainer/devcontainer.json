@@ -1,6 +1,7 @@
 {
     "name": "ROS 2 Humble",
     "build": {
+        "context": "..",
         "dockerfile": "Dockerfile",
         "options": ["--network=host"]
     },
