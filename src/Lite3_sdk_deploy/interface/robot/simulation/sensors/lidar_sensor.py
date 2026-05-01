@@ -7,8 +7,8 @@ import math
 import numpy as np
 import mujoco
 
+from builtin_interfaces.msg import Time
 from rclpy.node import Node
-from rclpy.time import Time
 from sensor_msgs.msg import LaserScan
 from geometry_msgs.msg import TransformStamped, Quaternion, Vector3
 from scipy.spatial.transform import Rotation as R_scipy
@@ -83,7 +83,7 @@ class LidarSensor:
         self.scan_time = 1.0 / LIDAR_FREQUENCY_HZ
         self.time_increment = self.scan_time / (NUM_RAYS - 1)  # match RPLiDAR
 
-    def update(self, timestamp: float):
+    def update(self, stamp: Time):
         """Cast rays and publish LaserScan."""
         if not self.enabled:
             return
@@ -111,7 +111,7 @@ class LidarSensor:
 
         # Build LaserScan message
         msg = LaserScan()
-        msg.header.stamp = self.node.get_clock().now().to_msg()
+        msg.header.stamp = stamp
         msg.header.frame_id = LIDAR_FRAME_ID
         msg.angle_min = -math.pi
         msg.angle_max = math.pi

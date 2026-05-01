@@ -7,6 +7,7 @@ from pathlib import Path
 
 import mujoco
 import numpy as np
+from builtin_interfaces.msg import Time
 from geometry_msgs.msg import Quaternion, TransformStamped, Vector3
 from rclpy.node import Node
 from scipy.spatial.transform import Rotation as R_scipy
@@ -85,7 +86,7 @@ class Mid360LidarSensor:
             f"pattern: {path})"
         )
 
-    def update(self, timestamp: float):
+    def update(self, stamp: Time):
         """Cast one Mid360 scan chunk and publish valid hit points."""
         if not self.enabled:
             return
@@ -120,7 +121,7 @@ class Mid360LidarSensor:
             & (self.distances <= RANGE_MAX)
         )
         points = (local_dirs[valid] * self.distances[valid, None]).astype(np.float32)
-        self._publish_pointcloud(points)
+        self._publish_pointcloud(points, stamp)
 
     def _sample_angles(self) -> np.ndarray:
         start = self._pattern_index
@@ -138,9 +139,9 @@ class Mid360LidarSensor:
             np.sin(phi),
         )).astype(np.float64)
 
-    def _publish_pointcloud(self, points: np.ndarray):
+    def _publish_pointcloud(self, points: np.ndarray, stamp: Time):
         msg = PointCloud2()
-        msg.header.stamp = self.node.get_clock().now().to_msg()
+        msg.header.stamp = stamp
         msg.header.frame_id = MID360_FRAME_ID
         msg.height = 1
         msg.width = len(points)

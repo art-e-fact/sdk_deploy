@@ -8,6 +8,7 @@ import math
 import numpy as np
 import mujoco
 
+from builtin_interfaces.msg import Time
 from rclpy.node import Node
 from sensor_msgs.msg import Image, CameraInfo, PointCloud2, PointField
 from std_msgs.msg import Header
@@ -174,11 +175,10 @@ class DepthSensor:
             f"({WIDTH}x{HEIGHT} @ {DEPTH_FREQUENCY_HZ} Hz, "
             f"enabled: {', '.join(enabled) or 'none'})")
 
-    def update(self, timestamp: float):
+    def update(self, stamp: Time):
         """Render depth + color and publish enabled topics."""
         if not self.enabled:
             return
-        stamp = self.node.get_clock().now().to_msg()
         depth_m = None
         rgb_buf = None
 
