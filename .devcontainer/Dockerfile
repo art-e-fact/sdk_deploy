@@ -17,6 +17,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 # ROS packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-humble-grid-map-msgs \
+    ros-humble-grid-map-rviz-plugin \
     ros-humble-nav2-bt-navigator \
     ros-humble-nav2-planner \
     ros-humble-nav2-controller \
