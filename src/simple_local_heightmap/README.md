@@ -13,7 +13,7 @@ The detector assumes:
 - the robot is between the two rails
 - the robot heading is roughly aligned with the rail tangent locally
 
-It samples several short cross-sections across the robot heading, groups neighboring cells with similar rail-like height, pairs one left group with one right group, and fits a centerline through the detected slice midpoints.
+It first sweeps the center cross-section around the robot heading, keeps the angle with the smallest valid gauge error, then uses that orientation for the slices ahead and behind. Each slice groups neighboring cells with similar rail-like height, pairs one left group with one right group, and contributes a midpoint to the fitted centerline.
 
 ### Parameters
 
@@ -23,6 +23,8 @@ It samples several short cross-sections across the robot heading, groups neighbo
 - `track_gauge` (`1.067`): expected distance between rails in meters
 - `rail_width` (`0.15`): expected lateral width of one rail in meters
 - `gauge_tolerance` (`0.40`): maximum allowed gauge error when pairing left and right rail groups
+- `angle_sweep_deg` (`20.0`): total half-range of the center-slice angle search around the robot heading
+- `angle_step_deg` (`5.0`): spacing between tested center-slice angles in degrees
 - `min_rail_height` (`0.05`): minimum elevation above the slice center to accept a rail hit
 - `max_rail_height` (`0.30`): maximum allowed rail height above the local slice baseline
 - `max_rail_height_difference` (`0.08`): maximum allowed height mismatch between the two rails in one slice

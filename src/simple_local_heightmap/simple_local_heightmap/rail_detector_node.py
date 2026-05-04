@@ -23,6 +23,8 @@ class RailDetectorNode(Node):
         self.track_gauge = float(self.declare_parameter('track_gauge', 1.067).value)
         self.rail_width = float(self.declare_parameter('rail_width', 0.15).value)
         self.gauge_tolerance = float(self.declare_parameter('gauge_tolerance', 0.40).value)
+        self.angle_sweep_deg = float(self.declare_parameter('angle_sweep_deg', 40.0).value)
+        self.angle_step_deg = float(self.declare_parameter('angle_step_deg', 5.0).value)
         self.min_rail_height = float(self.declare_parameter('min_rail_height', 0.05).value)
         self.max_rail_height = float(self.declare_parameter('max_rail_height', 0.30).value)
         self.max_rail_height_difference = float(
@@ -95,14 +97,12 @@ class RailDetectorNode(Node):
         }
 
     def _detect_rails(self, grid, odom):
-        """Extract rail hits from several lateral slices and fit one local centerline."""
+        """Extract rail hits from several slices after aligning the center slice orientation."""
         robot_xy = np.array([
             float(odom.pose.pose.position.x),
             float(odom.pose.pose.position.y),
         ], dtype=np.float32)
         yaw = self._yaw_from_quaternion(odom.pose.pose.orientation)
-        forward = np.array([math.cos(yaw), math.sin(yaw)], dtype=np.float32)
-        lateral = np.array([-math.sin(yaw), math.cos(yaw)], dtype=np.float32)
 
         forward_offsets = np.linspace(
             -0.5 * self.forward_span, 0.5 * self.forward_span, self.num_slices, dtype=np.float32
@@ -111,21 +111,21 @@ class RailDetectorNode(Node):
         lateral_offsets = np.linspace(
             -self.lateral_search_width, self.lateral_search_width, sample_count, dtype=np.float32
         )
+        forward, lateral = self._find_best_slice_axes(robot_xy, yaw, lateral_offsets, grid)
 
         slices = []
         midpoints = []
         hits = []
 
         for forward_offset in forward_offsets:
-            # Sample one lateral cross-section in the robot frame.
-            slice_center = robot_xy + forward_offset * forward
-            xy = slice_center + lateral_offsets[:, None] * lateral[None, :]
-            z = self._sample_grid(grid, xy)
-
-            center_mask = np.abs(lateral_offsets) <= min(0.25, 0.25 * self.track_gauge)
-            baseline = self._safe_nanmedian(z[center_mask])
-            if not math.isfinite(baseline):
-                baseline = self._safe_nanmedian(z)
+            xy, z, baseline = self._sample_slice(
+                robot_xy,
+                forward,
+                lateral,
+                forward_offset,
+                lateral_offsets,
+                grid,
+            )
 
             pair = self._find_rail_pair(
                 xy,
@@ -156,6 +156,60 @@ class RailDetectorNode(Node):
             'hits': np.asarray(hits, dtype=np.float32),
             'line': line,
         }
+
+    def _find_best_slice_axes(self, robot_xy, yaw, lateral_offsets, grid):
+        """Sweep the center slice angle and keep the valid orientation with the smallest gauge error."""
+        best = None
+        if self.angle_step_deg > 0.0 and self.angle_sweep_deg > 0.0:
+            angle_offsets_deg = np.arange(
+                -self.angle_sweep_deg,
+                self.angle_sweep_deg + 0.5 * self.angle_step_deg,
+                self.angle_step_deg,
+                dtype=np.float32,
+            )
+        else:
+            angle_offsets_deg = np.array([0.0], dtype=np.float32)
+
+        for angle_offset_deg in angle_offsets_deg:
+            forward, lateral = self._slice_axes(yaw + math.radians(float(angle_offset_deg)))
+            xy, z, baseline = self._sample_slice(
+                robot_xy,
+                forward,
+                lateral,
+                0.0,
+                lateral_offsets,
+                grid,
+            )
+            pair = self._find_rail_pair(
+                xy,
+                lateral_offsets,
+                z,
+                baseline=baseline,
+                resolution=grid['resolution'],
+            )
+            if pair is None:
+                continue
+
+            left_point, right_point = pair
+            gauge_error = abs(float(np.linalg.norm(left_point[:2] - right_point[:2])) - self.track_gauge)
+            candidate = (gauge_error, abs(float(angle_offset_deg)), forward, lateral)
+            if best is None or candidate[:2] < best[:2]:
+                best = candidate
+
+        if best is not None:
+            return best[2], best[3]
+        return self._slice_axes(yaw)
+
+    def _sample_slice(self, robot_xy, forward, lateral, forward_offset, lateral_offsets, grid):
+        """Sample one cross-section and estimate its local center baseline."""
+        slice_center = robot_xy + forward_offset * forward
+        xy = slice_center + lateral_offsets[:, None] * lateral[None, :]
+        z = self._sample_grid(grid, xy)
+        center_mask = np.abs(lateral_offsets) <= min(0.25, 0.25 * self.track_gauge)
+        baseline = self._safe_nanmedian(z[center_mask])
+        if not math.isfinite(baseline):
+            baseline = self._safe_nanmedian(z)
+        return xy, z, baseline
 
     def _sample_grid(self, grid, xy):
         """Sample the elevation grid at world XY points with nearest-neighbor lookup."""
@@ -296,6 +350,13 @@ class RailDetectorNode(Node):
         valid = denom > 0.0
         smooth[valid] = numer[valid] / denom[valid]
         return smooth
+
+    @staticmethod
+    def _slice_axes(yaw):
+        """Convert a slice yaw into forward and lateral unit vectors."""
+        forward = np.array([math.cos(yaw), math.sin(yaw)], dtype=np.float32)
+        lateral = np.array([-math.sin(yaw), math.cos(yaw)], dtype=np.float32)
+        return forward, lateral
 
     def _fit_centerline(self, robot_xy, forward, midpoints):
         """Fit a short centerline and derive the robot's signed lateral offset."""
