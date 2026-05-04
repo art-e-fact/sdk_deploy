@@ -78,9 +78,17 @@ class MuJoCoSimulationNode(Node):
         self.declare_parameter('use_procedural_scene', False)
         self.declare_parameter('procedural_env_seed', -1)
         self.declare_parameter('headless', False)
+        self.declare_parameter('enable_lidar', False)
+        self.declare_parameter('enable_depth', False)
+        self.declare_parameter('enable_color', False)
+        self.declare_parameter('enable_pointcloud', False)
         use_procedural_scene = bool(self.get_parameter('use_procedural_scene').value)
         configured_seed = int(self.get_parameter('procedural_env_seed').value)
         headless = bool(self.get_parameter('headless').value)
+        enable_lidar = bool(self.get_parameter('enable_lidar').value)
+        enable_depth = bool(self.get_parameter('enable_depth').value)
+        enable_color = bool(self.get_parameter('enable_color').value)
+        enable_pointcloud = bool(self.get_parameter('enable_pointcloud').value)
         use_viewer = USE_VIEWER and (not headless)
         self.procedural_waypoints_msg = None
 
@@ -109,16 +117,14 @@ class MuJoCoSimulationNode(Node):
             spec = mujoco.MjSpec.from_file(xml_path)
             self.get_logger().info("[INFO] Using default static scene")
 
-        if os.path.isfile(d435i_xml_path):
-            d435i_spec = mujoco.MjSpec.from_file(d435i_xml_path)
-            # Find the d435i_mount site on TORSO
-            torso = spec.worldbody.first_body()
-            mount_site = next(s for s in torso.sites if s.name == 'd435i_mount')
-            mount_site.pos = [0.25+0.01,  0.,   0.08] # move realsense a bit further forward to avoid capturing robot body
-            spec.attach(d435i_spec, prefix='d435i-', site=mount_site)
+        # Sensor-driven MjSpec mutations (must happen before compile)
+        if enable_depth or enable_color:
+            if not os.path.isfile(d435i_xml_path):
+                raise FileNotFoundError(f"D435i XML not found: {d435i_xml_path}")
+            DepthSensor.configure_spec(spec, d435i_xml_path)
             self.get_logger().info("[INFO] D435i model attached via mjSpec")
-        else:
-            self.get_logger().warn(f"D435i XML not found: {d435i_xml_path}, skipping depth camera")
+        if enable_lidar:
+            LidarSensor.configure_spec(spec)
 
         self.model = spec.compile()
         self.model.opt.timestep = DT
@@ -183,11 +189,16 @@ class MuJoCoSimulationNode(Node):
             self.get_logger().info("[INFO] Running MuJoCo in headless mode (viewer disabled)")
 
         # LiDAR sensor
-        self.lidar = LidarSensor(self.model, self.data, self, self.viewer)
+        self.lidar = LidarSensor(self.model, self.data, self, self.viewer, enabled=enable_lidar)
         self.lidar_step_interval = int(1.0 / (LIDAR_FREQUENCY_HZ * DT))
 
         # Depth camera sensor (RealSense D435i)
-        self.depth = DepthSensor(self.model, self.data, self, self.viewer)
+        self.depth = DepthSensor(
+            self.model, self.data, self, self.viewer,
+            enable_depth=enable_depth,
+            enable_color=enable_color,
+            enable_pointcloud=enable_pointcloud,
+        )
         self.depth_step_interval = int(1.0 / (DEPTH_FREQUENCY_HZ * DT))
 
         # Publish all static transforms in one call

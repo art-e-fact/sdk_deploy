@@ -18,7 +18,7 @@ def launch_setup(context, *args, **kwargs):
 
     parameters = {
         'use_sim_time': use_sim_time,
-        'subscribe_scan': True,
+        'subscribe_scan': False,
         'subscribe_depth': True,
         'subscribe_rgb': True,
         'subscribe_odom_info': False,
