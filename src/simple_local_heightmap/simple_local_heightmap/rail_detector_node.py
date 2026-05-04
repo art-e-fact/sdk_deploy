@@ -21,6 +21,7 @@ class RailDetectorNode(Node):
             'marker_topic', '/rail_detector/markers'
         ).value
         self.track_gauge = float(self.declare_parameter('track_gauge', 1.067).value)
+        self.rail_width = float(self.declare_parameter('rail_width', 0.15).value)
         self.gauge_tolerance = float(self.declare_parameter('gauge_tolerance', 0.40).value)
         self.min_rail_height = float(self.declare_parameter('min_rail_height', 0.05).value)
         self.max_rail_height = float(self.declare_parameter('max_rail_height', 0.30).value)
@@ -126,36 +127,23 @@ class RailDetectorNode(Node):
             if not math.isfinite(baseline):
                 baseline = self._safe_nanmedian(z)
 
-            left_point = self._pick_rail_point(
+            pair = self._find_rail_pair(
                 xy,
                 lateral_offsets,
                 z,
-                center=0.5 * self.track_gauge,
                 baseline=baseline,
-            )
-            right_point = self._pick_rail_point(
-                xy,
-                lateral_offsets,
-                z,
-                center=-0.5 * self.track_gauge,
-                baseline=baseline,
+                resolution=grid['resolution'],
             )
 
             slice_result = {'xy': xy, 'z': z, 'left': None, 'right': None, 'midpoint': None}
-            if left_point is not None and right_point is not None:
-                # Keep only slices whose two rail hits agree with the expected gauge.
-                measured_gauge = float(np.linalg.norm(left_point[:2] - right_point[:2]))
-                height_difference = abs(float(left_point[2] - right_point[2]))
-                if (
-                    abs(measured_gauge - self.track_gauge) <= 2.0 * self.gauge_tolerance
-                    and height_difference <= self.max_rail_height_difference
-                ):
-                    midpoint = 0.5 * (left_point + right_point)
-                    slice_result['left'] = left_point
-                    slice_result['right'] = right_point
-                    slice_result['midpoint'] = midpoint
-                    midpoints.append(midpoint)
-                    hits.extend([left_point, right_point])
+            if pair is not None:
+                left_point, right_point = pair
+                midpoint = 0.5 * (left_point + right_point)
+                slice_result['left'] = left_point
+                slice_result['right'] = right_point
+                slice_result['midpoint'] = midpoint
+                midpoints.append(midpoint)
+                hits.extend([left_point, right_point])
 
             slices.append(slice_result)
 
@@ -189,38 +177,97 @@ class RailDetectorNode(Node):
         z[inside] = grid['elevation'][rows[inside], cols[inside]]
         return z
 
-    def _pick_rail_point(self, xy, lateral_offsets, z, center, baseline):
-        """Return one rail-top center after masking out samples that are too tall to be rail."""
+    def _find_rail_pair(self, xy, lateral_offsets, z, baseline, resolution):
+        """Group one slice into rail-like blobs and return the best left/right pair."""
         if not math.isfinite(baseline):
             return None
 
         smooth = self._smooth_profile(z)
-        window = np.abs(lateral_offsets - center) <= self.gauge_tolerance
         in_height_band = (
             np.isfinite(smooth)
             & (smooth >= baseline + self.min_rail_height)
             & (smooth <= baseline + self.max_rail_height)
         )
-        candidates = np.where(window & in_height_band)[0]
-        if len(candidates) == 0:
+        groups = self._extract_slice_groups(
+            xy,
+            lateral_offsets,
+            z,
+            smooth,
+            in_height_band,
+            resolution,
+        )
+        if not groups:
             return None
 
-        seed_idx = int(candidates[np.argmax(smooth[candidates])])
-        peak_height = float(smooth[seed_idx])
-        plateau_threshold = baseline + max(self.min_rail_height, 0.5 * (peak_height - baseline))
-        start = seed_idx
-        while start > 0 and window[start - 1] and in_height_band[start - 1]:
-            if smooth[start - 1] < plateau_threshold:
-                break
-            start -= 1
+        width_tolerance = max(2.0 * resolution, 0.5 * self.rail_width)
+        left_groups = [
+            group for group in groups
+            if group['offset'] > 0.0 and abs(group['width'] - self.rail_width) <= width_tolerance
+        ]
+        right_groups = [
+            group for group in groups
+            if group['offset'] < 0.0 and abs(group['width'] - self.rail_width) <= width_tolerance
+        ]
+        if not left_groups or not right_groups:
+            return None
 
-        end = seed_idx
-        last_index = len(smooth) - 1
-        while end < last_index and window[end + 1] and in_height_band[end + 1]:
-            if smooth[end + 1] < plateau_threshold:
-                break
-            end += 1
+        best_pair = None
+        best_score = float('inf')
+        for left_group in left_groups:
+            for right_group in right_groups:
+                measured_gauge = float(left_group['offset'] - right_group['offset'])
+                gauge_error = abs(measured_gauge - self.track_gauge)
+                height_error = abs(left_group['point'][2] - right_group['point'][2])
+                width_error = (
+                    abs(left_group['width'] - self.rail_width)
+                    + abs(right_group['width'] - self.rail_width)
+                )
+                if (
+                    gauge_error > self.gauge_tolerance
+                    or height_error > self.max_rail_height_difference
+                ):
+                    continue
 
+                score = gauge_error + height_error + 0.5 * width_error
+                if score < best_score:
+                    best_score = score
+                    best_pair = (left_group['point'], right_group['point'])
+
+        return best_pair
+
+    def _extract_slice_groups(self, xy, lateral_offsets, z, smooth, mask, resolution):
+        """Split one slice into contiguous height-consistent groups."""
+        groups = []
+        group_height_step = max(resolution, 0.5 * self.min_rail_height)
+        start = None
+        prev = None
+
+        for index in range(len(smooth)):
+            if not mask[index]:
+                if start is not None:
+                    groups.append(self._build_slice_group(xy, lateral_offsets, z, start, prev, resolution))
+                    start = None
+                    prev = None
+                continue
+
+            if start is None:
+                start = prev = index
+                continue
+
+            if abs(float(smooth[index] - smooth[prev])) <= group_height_step:
+                prev = index
+                continue
+
+            groups.append(self._build_slice_group(xy, lateral_offsets, z, start, prev, resolution))
+            start = prev = index
+
+        if start is not None:
+            groups.append(self._build_slice_group(xy, lateral_offsets, z, start, prev, resolution))
+
+        return [group for group in groups if group is not None]
+
+    def _build_slice_group(self, xy, lateral_offsets, z, start, end, resolution):
+        """Summarize one contiguous group by its center, width, and representative height."""
         segment = slice(start, end + 1)
         segment_xy = xy[segment]
         segment_z = z[segment]
@@ -231,7 +278,11 @@ class RailDetectorNode(Node):
         point = np.empty(3, dtype=np.float32)
         point[:2] = np.mean(segment_xy[valid], axis=0)
         point[2] = float(np.nanmedian(segment_z[valid]))
-        return point
+        return {
+            'point': point,
+            'offset': float(np.mean(lateral_offsets[segment])),
+            'width': float(abs(lateral_offsets[end] - lateral_offsets[start]) + resolution),
+        }
 
     def _smooth_profile(self, z):
         """Apply a tiny 1D smoothing kernel while preserving missing samples."""
