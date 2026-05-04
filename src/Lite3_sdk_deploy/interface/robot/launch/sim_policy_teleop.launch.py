@@ -75,6 +75,20 @@ def launch_setup(context, *args, **kwargs):
                 }],
             )
         )
+        actions.append(
+            Node(
+                package="simple_local_heightmap",
+                executable="rail_detector_node",
+                name="rail_detector_node",
+                output="screen",
+                parameters=[{
+                    "heightmap_topic": "/local_heightmap",
+                    "odom_topic": "/odom",
+                    "marker_topic": "/rail_detector/markers",
+                    "track_gauge": 1.067,
+                }],
+            )
+        )
     elif enable_heightmap_value:
         actions.append(
             LogInfo(
