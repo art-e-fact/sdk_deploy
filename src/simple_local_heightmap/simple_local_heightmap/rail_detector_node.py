@@ -2,11 +2,12 @@ import math
 
 import numpy as np
 import rclpy
-from geometry_msgs.msg import Point
 from grid_map_msgs.msg import GridMap
 from nav_msgs.msg import Odometry
 from rclpy.node import Node
-from visualization_msgs.msg import Marker, MarkerArray
+from visualization_msgs.msg import MarkerArray
+
+from simple_local_heightmap.rail_detector_visualization import build_markers
 
 
 class RailDetectorNode(Node):
@@ -59,7 +60,9 @@ class RailDetectorNode(Node):
             return
 
         detection = self._detect_rails(grid, self.latest_odom)
-        self.marker_pub.publish(self._build_markers(msg.header.frame_id, msg.header.stamp, detection))
+        self.marker_pub.publish(
+            build_markers(msg.header.frame_id, msg.header.stamp, detection, self.forward_span)
+        )
 
     def _decode_grid_map(self, msg):
         """Decode the published GridMap message back into a 2D elevation array."""
@@ -382,97 +385,6 @@ class RailDetectorNode(Node):
             'yaw': math.atan2(float(tangent[1]), float(tangent[0])),
         }
 
-    def _build_markers(self, frame_id, stamp, detection):
-        """Visualize slice samples, accepted rail hits, and the fitted centerline."""
-        msg = MarkerArray()
-        msg.markers.append(self._delete_all_marker(frame_id, stamp))
-
-        for index, slice_result in enumerate(detection['slices']):
-            marker = Marker()
-            marker.header.frame_id = frame_id
-            marker.header.stamp = stamp
-            marker.ns = 'slice_profiles'
-            marker.id = index
-            marker.type = Marker.LINE_STRIP
-            marker.action = Marker.ADD
-            marker.scale.x = 0.015
-            marker.color.r = 0.2
-            marker.color.g = 0.7
-            marker.color.b = 1.0
-            marker.color.a = 0.75
-            marker.points = [
-                self._point(x, y, z + 0.01)
-                for (x, y), z in zip(slice_result['xy'], slice_result['z'])
-                if math.isfinite(float(z))
-            ]
-            if marker.points:
-                msg.markers.append(marker)
-
-        if len(detection['hits']) != 0:
-            msg.markers.append(
-                self._sphere_list_marker(
-                    frame_id,
-                    stamp,
-                    namespace='rail_hits',
-                    marker_id=100,
-                    points=detection['hits'],
-                    rgb=(0.5, 0.2, 0.95),
-                    scale=0.08,
-                )
-            )
-
-        if len(detection['midpoints']) != 0:
-            msg.markers.append(
-                self._sphere_list_marker(
-                    frame_id,
-                    stamp,
-                    namespace='center_samples',
-                    marker_id=101,
-                    points=detection['midpoints'],
-                    rgb=(1.0, 0.9, 0.1),
-                    scale=0.10,
-                )
-            )
-
-        if detection['line'] is not None:
-            line = detection['line']
-            z_level = self._marker_height(detection['midpoints'], detection['hits'])
-            start = line['center'] - 0.8 * self.forward_span * line['tangent']
-            end = line['center'] + 0.8 * self.forward_span * line['tangent']
-            msg.markers.append(
-                self._line_marker(
-                    frame_id,
-                    stamp,
-                    namespace='centerline',
-                    marker_id=200,
-                    start=np.array([start[0], start[1], z_level + 0.04], dtype=np.float32),
-                    end=np.array([end[0], end[1], z_level + 0.04], dtype=np.float32),
-                    rgb=(0.1, 1.0, 0.2),
-                    width=0.05,
-                )
-            )
-            text = (
-                f'offset={line["signed_offset"]:+.2f} m\\n'
-                f'heading={math.degrees(line["yaw"]):.1f} deg'
-            )
-        else:
-            text = 'rail parse incomplete'
-
-        robot = detection['robot_xy']
-        msg.markers.append(
-            self._text_marker(
-                frame_id,
-                stamp,
-                namespace='summary',
-                marker_id=300,
-                x=float(robot[0]),
-                y=float(robot[1]),
-                z=self._marker_height(detection['midpoints'], detection['hits']) + 0.25,
-                text=text,
-            )
-        )
-        return msg
-
     @staticmethod
     def _safe_nanmedian(values):
         finite = np.asarray(values, dtype=np.float32)
@@ -488,79 +400,6 @@ class RailDetectorNode(Node):
         z = float(quaternion.z)
         w = float(quaternion.w)
         return math.atan2(2.0 * (w * z + x * y), 1.0 - 2.0 * (y * y + z * z))
-
-    @staticmethod
-    def _delete_all_marker(frame_id, stamp):
-        marker = Marker()
-        marker.header.frame_id = frame_id
-        marker.header.stamp = stamp
-        marker.action = Marker.DELETEALL
-        return marker
-
-    @staticmethod
-    def _point(x, y, z):
-        point = Point()
-        point.x = float(x)
-        point.y = float(y)
-        point.z = float(z)
-        return point
-
-    def _sphere_list_marker(self, frame_id, stamp, namespace, marker_id, points, rgb, scale):
-        marker = Marker()
-        marker.header.frame_id = frame_id
-        marker.header.stamp = stamp
-        marker.ns = namespace
-        marker.id = marker_id
-        marker.type = Marker.SPHERE_LIST
-        marker.action = Marker.ADD
-        marker.scale.x = scale
-        marker.scale.y = scale
-        marker.scale.z = scale
-        marker.color.r, marker.color.g, marker.color.b = rgb
-        marker.color.a = 0.95
-        marker.points = [self._point(x, y, z + 0.02) for x, y, z in np.asarray(points)]
-        return marker
-
-    def _line_marker(self, frame_id, stamp, namespace, marker_id, start, end, rgb, width):
-        marker = Marker()
-        marker.header.frame_id = frame_id
-        marker.header.stamp = stamp
-        marker.ns = namespace
-        marker.id = marker_id
-        marker.type = Marker.LINE_STRIP
-        marker.action = Marker.ADD
-        marker.scale.x = width
-        marker.color.r, marker.color.g, marker.color.b = rgb
-        marker.color.a = 0.95
-        marker.points = [self._point(*start), self._point(*end)]
-        return marker
-
-    def _text_marker(self, frame_id, stamp, namespace, marker_id, x, y, z, text):
-        marker = Marker()
-        marker.header.frame_id = frame_id
-        marker.header.stamp = stamp
-        marker.ns = namespace
-        marker.id = marker_id
-        marker.type = Marker.TEXT_VIEW_FACING
-        marker.action = Marker.ADD
-        marker.scale.z = 0.18
-        marker.color.r = 1.0
-        marker.color.g = 1.0
-        marker.color.b = 1.0
-        marker.color.a = 0.95
-        marker.pose.position.x = x
-        marker.pose.position.y = y
-        marker.pose.position.z = z
-        marker.text = text
-        return marker
-
-    @staticmethod
-    def _marker_height(midpoints, hits):
-        if len(midpoints) != 0:
-            return float(np.nanmedian(midpoints[:, 2]))
-        if len(hits) != 0:
-            return float(np.nanmedian(hits[:, 2]))
-        return 0.0
 
 
 def main(args=None):
