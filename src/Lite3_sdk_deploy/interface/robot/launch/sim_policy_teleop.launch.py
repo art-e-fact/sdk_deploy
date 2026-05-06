@@ -72,6 +72,11 @@ def launch_setup(context, *args, **kwargs):
                     "resolution": 0.025,
                     "length_x": 8.0,
                     "length_y": 8.0,
+                    "front_clear_enabled": True,
+                    "front_clear_length": 1.5,
+                    "front_clear_width": 1.0,
+                    "front_clear_offset_x": 0.25,
+                    "front_stale_time_sec": 0.75,
                 }],
             )
         )

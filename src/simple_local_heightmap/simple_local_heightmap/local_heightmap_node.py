@@ -33,6 +33,21 @@ class LocalHeightmapNode(Node):
         self.min_range = float(self.declare_parameter('min_range', 0.1).value)
         self.max_range = float(self.declare_parameter('max_range', 12.0).value)
         self.stale_time_sec = float(self.declare_parameter('stale_time_sec', 100.0).value)
+        self.front_clear_enabled = bool(
+            self.declare_parameter('front_clear_enabled', False).value
+        )
+        self.front_clear_length = float(
+            self.declare_parameter('front_clear_length', 1.5).value
+        )
+        self.front_clear_width = float(
+            self.declare_parameter('front_clear_width', 1.0).value
+        )
+        self.front_clear_offset_x = float(
+            self.declare_parameter('front_clear_offset_x', 0.25).value
+        )
+        self.front_stale_time_sec = float(
+            self.declare_parameter('front_stale_time_sec', 0.75).value
+        )
         self.max_pose_variance = float(
             self.declare_parameter('max_pose_variance', 0.0).value
         )
@@ -61,6 +76,13 @@ class LocalHeightmapNode(Node):
             f'Publishing {self.length_x:.2f} x {self.length_y:.2f} m height maps at '
             f'{self.resolution:.3f} m/cell in {self.map_frame} from {self.cloud_topic}'
         )
+        if self.front_clear_enabled:
+            self.get_logger().info(
+                'Front fast-clear enabled with '
+                f'{self.front_clear_length:.2f} x {self.front_clear_width:.2f} m '
+                f'rectangle, offset {self.front_clear_offset_x:.2f} m, '
+                f'timeout {self.front_stale_time_sec:.2f} s'
+            )
 
     def pose_callback(self, msg):
         cov = msg.pose.covariance
@@ -97,7 +119,7 @@ class LocalHeightmapNode(Node):
             if len(points) != 0:
                 self._fuse_scan(self._rasterize(points), scan_time)
 
-        self._expire_stale_cells(scan_time)
+        self._expire_stale_cells(scan_time, robot_transform)
         self.map_pub.publish(self._to_grid_map(stamp))
         self.debug_pub.publish(self._to_debug_cloud(stamp))
 
@@ -143,12 +165,56 @@ class LocalHeightmapNode(Node):
         self.valid[observed] = True
         self.last_seen[observed] = scan_time
 
-    def _expire_stale_cells(self, scan_time):
-        if self.stale_time_sec <= 0.0:
+    def _expire_stale_cells(self, scan_time, robot_transform):
+        front_mask = self._front_clear_mask(robot_transform)
+        if self.stale_time_sec <= 0.0 and front_mask is None:
             return
-        stale = self.valid & ((scan_time - self.last_seen) > self.stale_time_sec)
+
+        age = scan_time - self.last_seen
+        stale = np.zeros_like(self.valid, dtype=bool)
+        if self.stale_time_sec > 0.0:
+            if front_mask is None:
+                stale = self.valid & (age > self.stale_time_sec)
+            else:
+                stale = self.valid & (~front_mask) & (age > self.stale_time_sec)
+        if front_mask is not None:
+            stale |= self.valid & front_mask & (age > self.front_stale_time_sec)
         self.elevation[stale] = np.nan
         self.valid[stale] = False
+
+    def _front_clear_mask(self, robot_transform):
+        if not self.front_clear_enabled:
+            return None
+        if self.front_stale_time_sec <= 0.0:
+            return None
+        if self.front_clear_length <= 0.0 or self.front_clear_width <= 0.0:
+            return None
+
+        x_min, y_min = self._grid_min_corner()
+        cols = x_min + (np.arange(self.width, dtype=np.float32) + 0.5) * self.resolution
+        rows = y_min + (np.arange(self.height, dtype=np.float32) + 0.5) * self.resolution
+        xs, ys = np.meshgrid(cols, rows)
+
+        translation = robot_transform.transform.translation
+        rotation = robot_transform.transform.rotation
+        rot = self._quaternion_matrix(rotation.x, rotation.y, rotation.z, rotation.w)
+        relative = np.stack(
+            (
+                xs - np.float32(translation.x),
+                ys - np.float32(translation.y),
+                np.zeros_like(xs),
+            ),
+            axis=-1,
+        )
+        robot_frame = relative @ rot
+
+        x_local = robot_frame[..., 0]
+        y_local = robot_frame[..., 1]
+        return (
+            (x_local >= self.front_clear_offset_x)
+            & (x_local <= self.front_clear_offset_x + self.front_clear_length)
+            & (np.abs(y_local) <= 0.5 * self.front_clear_width)
+        )
 
     def _shift_grid_if_needed(self, robot_x, robot_y):
         if self.center_x is None or self.center_y is None:

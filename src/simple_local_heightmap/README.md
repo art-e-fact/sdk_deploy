@@ -5,6 +5,21 @@ This package contains:
 - `local_heightmap_node`: builds a local `grid_map_msgs/GridMap` elevation map.
 - `rail_detector_node`: parses a rail pair from the local height map with a multi-slice detector and publishes RViz markers.
 
+## local_heightmap_node
+
+The local heightmap keeps one elevation value per grid cell and ages out cells using the
+time since they were last observed. To clear transient hits faster in front of the robot,
+the node can apply a shorter timeout inside a rectangle defined in the robot frame.
+
+### Parameters
+
+- `stale_time_sec` (`1.0`): default timeout used outside the front fast-clear rectangle
+- `front_clear_enabled` (`false`): enables a robot-frame rectangle with a shorter timeout
+- `front_clear_length` (`1.5`): length of the fast-clear rectangle in meters
+- `front_clear_width` (`1.0`): width of the fast-clear rectangle in meters
+- `front_clear_offset_x` (`0.25`): forward offset from the robot origin to the start of the rectangle
+- `front_stale_time_sec` (`0.75`): timeout used for cells inside the fast-clear rectangle
+
 ## rail_detector_node
 
 The detector assumes:
