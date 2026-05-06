@@ -15,6 +15,7 @@ import argparse
 import math
 import random
 from pathlib import Path
+from typing import Callable
 from scipy.spatial.transform import Rotation
 import numpy as np
 import mujoco
@@ -76,6 +77,9 @@ JOINT_INIT = {
 }
 
 
+SceneUpdater = Callable[[mujoco.MjModel, mujoco.MjData, float], bool]
+
+
 class MuJoCoSimulationNode(Node):
     def __init__(self,
                  model_key: str = MODEL_NAME,
@@ -102,8 +106,11 @@ class MuJoCoSimulationNode(Node):
         enable_color = bool(self.get_parameter('enable_color').value)
         enable_pointcloud = bool(self.get_parameter('enable_pointcloud').value)
         use_viewer = USE_VIEWER and (not headless)
+        self.scene_meta: dict = {}
+        self.scene_update: SceneUpdater | None = None
         self.procedural_waypoints_msg = None
         self.scene_start_pose = (-5.0, 0.0, 0.0)
+        scene_meta: dict = {}
 
         if scene_type not in {"static", "shapes", "railroad"}:
             raise ValueError(
@@ -157,6 +164,8 @@ class MuJoCoSimulationNode(Node):
             spec = mujoco.MjSpec.from_file(xml_path)
             self.get_logger().info("[INFO] Using default static scene")
 
+        self._set_scene_meta(scene_meta)
+
         # Sensor-driven MjSpec mutations (must happen before compile)
         if enable_depth or enable_color:
             if not os.path.isfile(d435i_xml_path):
@@ -174,6 +183,7 @@ class MuJoCoSimulationNode(Node):
         self.model = spec.compile()
         self.model.opt.timestep = DT
         self.data = mujoco.MjData(self.model)
+        self.timestamp = 0.0
 
         # 机器人自由度列表
         self.actuator_ids = [a for a in range(self.model.nu)]  # 0..11
@@ -182,6 +192,7 @@ class MuJoCoSimulationNode(Node):
 
         # 初始化站立姿态
         self._set_initial_pose(model_key, self.scene_start_pose)
+        self._update_scene(self.timestamp)
 
         # 缓存
         self.kp_cmd = np.zeros((self.dof_num, 1), np.float32)
@@ -193,7 +204,6 @@ class MuJoCoSimulationNode(Node):
 
         # IMU
         self.last_base_linvel = np.zeros((3, 1), np.float64)
-        self.timestamp = 0.0
 
         self.get_logger().info(f"[INFO] MuJoCo model loaded, dof = {self.dof_num}")
 
@@ -263,6 +273,24 @@ class MuJoCoSimulationNode(Node):
         qpos0[3:7] = np.array([math.cos(yaw / 2), 0, 0, math.sin(yaw / 2)])
         self.data.qpos[:] = qpos0
         mujoco.mj_forward(self.model, self.data)
+
+    def _set_scene_meta(self, scene_meta: dict | None):
+        self.scene_meta = scene_meta or {}
+        update_scene = self.scene_meta.get("update_scene")
+        if update_scene is None:
+            self.scene_update = None
+            return
+        if not callable(update_scene):
+            raise TypeError("scene_meta['update_scene'] must be callable")
+        self.scene_update = update_scene
+
+    def _update_scene(self, sim_time_s: float) -> bool:
+        if self.scene_update is None:
+            return False
+        changed = bool(self.scene_update(self.model, self.data, sim_time_s))
+        if changed:
+            mujoco.mj_forward(self.model, self.data)
+        return changed
 
     def _publish_static_transforms(self):
         """Collect static TFs from sensors and publish in one call."""
@@ -394,6 +422,7 @@ class MuJoCoSimulationNode(Node):
                 mujoco.mj_step(self.model, self.data)
 
                 self.timestamp = step * DT
+                self._update_scene(self.timestamp)
                 stamp = self._make_sim_stamp(self.timestamp)
 
                 # Keep TF current for exact sensor timestamp lookups.

@@ -2,6 +2,7 @@ from dataclasses import dataclass, field
 import math
 import os
 import tempfile
+from typing import Callable
 import mujoco
 import numpy as np
 from pyglm import glm
@@ -43,6 +44,8 @@ def _make_jis60kg() -> RailSpec:
 
 JIS_60KG = _make_jis60kg()
 _TERRAIN_DEFAULT = object()
+_FOLLOW_TARGET_BODY_NAME = "uwb_tag"
+_FOLLOW_TARGET_HEIGHT = 0.9
 
 
 @dataclass
@@ -702,6 +705,94 @@ def _build_mainline_mission_xy(net: RailNetwork, resolution: float = 1.0) -> lis
     return [[float(x), float(y)] for x, y, _ in net.roads[0]]
 
 
+def _build_road_path(road: list[tuple[float, float, float]]) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if not road:
+        return np.empty((0, 2)), np.empty((0,)), np.empty((0,))
+
+    pts = np.array([(x, y) for x, y, _ in road], dtype=float)
+    headings = np.array([h for _, _, h in road], dtype=float)
+    if len(pts) < 2:
+        return pts, headings, np.array([0.0], dtype=float)
+
+    seg_lens = np.linalg.norm(np.diff(pts, axis=0), axis=1)
+    cumlen = np.concatenate(([0.0], np.cumsum(seg_lens)))
+    return pts, headings, cumlen
+
+
+def _sample_road_path_pose(
+    path: tuple[np.ndarray, np.ndarray, np.ndarray], distance: float
+) -> tuple[float, float, float]:
+    pts, headings, cumlen = path
+    if len(pts) == 0:
+        return 0.0, 0.0, 0.0
+    if len(pts) == 1 or cumlen[-1] < 1e-9:
+        yaw_deg = float(headings[0]) if len(headings) else 0.0
+        return float(pts[0, 0]), float(pts[0, 1]), math.radians(yaw_deg)
+
+    d = float(np.clip(distance, 0.0, cumlen[-1]))
+    idx = int(np.clip(np.searchsorted(cumlen, d, side="right") - 1, 0, len(cumlen) - 2))
+    seg_len = max(cumlen[idx + 1] - cumlen[idx], 1e-12)
+    frac = (d - cumlen[idx]) / seg_len
+
+    x = float(pts[idx, 0] + frac * (pts[idx + 1, 0] - pts[idx, 0]))
+    y = float(pts[idx, 1] + frac * (pts[idx + 1, 1] - pts[idx, 1]))
+    yaw_deg = float(headings[idx] + frac * (headings[idx + 1] - headings[idx]))
+    return x, y, math.radians(yaw_deg)
+
+
+def _make_follow_target_updater(
+    net: RailNetwork,
+    start_distance: float,
+    speed: float,
+    start_wait_sec: float,
+    body_name: str = _FOLLOW_TARGET_BODY_NAME,
+    height: float = _FOLLOW_TARGET_HEIGHT,
+) -> tuple[
+    Callable[[mujoco.MjModel, mujoco.MjData, float], bool] | None,
+    float,
+    float,
+    float,
+    float,
+]:
+    mainline = net.roads[0] if net.roads else []
+    path = _build_road_path(mainline)
+    total_length = float(path[2][-1]) if len(path[2]) else 0.0
+    clamped_start = float(np.clip(start_distance, 0.0, total_length))
+    follow_speed = max(0.0, float(speed))
+    wait_sec = max(0.0, float(start_wait_sec))
+
+    if len(path[0]) == 0:
+        return None, total_length, clamped_start, follow_speed, wait_sec
+
+    state = {"mocap_id": None, "last_distance": None}
+
+    def update_scene(model: mujoco.MjModel, data: mujoco.MjData, sim_time_s: float) -> bool:
+        mocap_id = state["mocap_id"]
+        if mocap_id is None:
+            body_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, body_name)
+            if body_id < 0:
+                return False
+            mocap_id = int(model.body_mocapid[body_id])
+            if mocap_id < 0:
+                return False
+            state["mocap_id"] = mocap_id
+
+        travel_time = max(float(sim_time_s) - wait_sec, 0.0)
+        distance = min(clamped_start + follow_speed * travel_time, total_length)
+        if state["last_distance"] is not None and math.isclose(
+            distance, state["last_distance"], rel_tol=0.0, abs_tol=1e-9
+        ):
+            return False
+
+        x, y, yaw = _sample_road_path_pose(path, distance)
+        data.mocap_pos[mocap_id] = [x, y, height]
+        data.mocap_quat[mocap_id] = [math.cos(yaw / 2.0), 0.0, 0.0, math.sin(yaw / 2.0)]
+        state["last_distance"] = distance
+        return True
+
+    return update_scene, total_length, clamped_start, follow_speed, wait_sec
+
+
 def _build_railroad_scene_xml(
     net: RailNetwork,
     lite3_xml_path: str,
@@ -779,7 +870,7 @@ def _build_railroad_scene_xml(
         marker,
         "geom",
         type="cylinder",
-        size="0.2 0.9",
+        size="0.17 0.9",
         rgba="1.0 0.5 0.0 0.5",
         contype="0",
         conaffinity="0",
@@ -814,6 +905,9 @@ def build_railroad_spec(
     seed: int,
     n_roads: int = 5,
     terrain: TerrainSpec | None | object = _TERRAIN_DEFAULT,
+    follow_target_start: float = 0.4,
+    follow_target_speed: float = 0.5,
+    follow_target_start_wait_sec: float = 5.0,
     **builder_kwargs,
 ) -> tuple[mujoco.MjSpec, dict]:
     rng = np.random.default_rng(seed)
@@ -842,12 +936,23 @@ def build_railroad_spec(
     mainline_mission_xy = _build_mainline_mission_xy(scene.net)
     start_yaw_deg = _extract_yaw_deg(mainline)
     start_x, start_y = (mainline[0][0], mainline[0][1]) if mainline else (0.0, 0.0)
+    update_scene, mainline_length, clamped_start, follow_speed, wait_sec = _make_follow_target_updater(
+        scene.net,
+        start_distance=follow_target_start,
+        speed=follow_target_speed,
+        start_wait_sec=follow_target_start_wait_sec,
+    )
 
     meta = {
         "seed": seed,
         "roads": len(scene.net.roads),
         "mission_xy": mainline_mission_xy,
         "robot_start_pose": [float(start_x), float(start_y), math.radians(start_yaw_deg)],
+        "mainline_length": mainline_length,
+        "follow_target_start": clamped_start,
+        "follow_target_speed": follow_speed,
+        "follow_target_start_wait_sec": wait_sec,
+        "update_scene": update_scene,
     }
     return spec, meta
 
