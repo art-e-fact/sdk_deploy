@@ -27,6 +27,7 @@ setup(
         'console_scripts': [
             'local_heightmap_node = simple_local_heightmap.local_heightmap_node:main',
             'rail_detector_node = simple_local_heightmap.rail_detector_node:main',
+            'rail_target_follower_node = simple_local_heightmap.rail_target_follower_node:main',
         ],
     },
 )

@@ -6,6 +6,7 @@ from grid_map_msgs.msg import GridMap
 from nav_msgs.msg import Odometry
 from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.node import Node
+from std_msgs.msg import Float32
 from visualization_msgs.msg import MarkerArray
 
 from simple_local_heightmap.rail_detector_visualization import build_markers
@@ -36,6 +37,21 @@ class RailDetectorNode(Node):
             'marker_topic',
             '/rail_detector/markers',
             'Output MarkerArray topic for RViz debug markers.',
+        )
+        self.center_offset_topic = declare(
+            'center_offset_topic',
+            '/rail_detector/center_offset',
+            'Output topic for the signed rail center offset in meters.',
+        )
+        self.tangent_yaw_topic = declare(
+            'tangent_yaw_topic',
+            '/rail_detector/tangent_yaw',
+            'Output topic for the detected rail tangent yaw in radians.',
+        )
+        self.target_distance_topic = declare(
+            'target_distance_topic',
+            '/rail_detector/target_distance',
+            'Output topic for the detected target distance in meters; negative means invalid.',
         )
         self.track_gauge = float(declare(
             'track_gauge',
@@ -124,6 +140,9 @@ class RailDetectorNode(Node):
         self.latest_odom = None
 
         self.marker_pub = self.create_publisher(MarkerArray, self.marker_topic, 10)
+        self.center_offset_pub = self.create_publisher(Float32, self.center_offset_topic, 10)
+        self.tangent_yaw_pub = self.create_publisher(Float32, self.tangent_yaw_topic, 10)
+        self.target_distance_pub = self.create_publisher(Float32, self.target_distance_topic, 10)
         self.create_subscription(Odometry, self.odom_topic, self.odom_callback, 10)
         self.create_subscription(GridMap, self.heightmap_topic, self.heightmap_callback, 10)
 
@@ -152,6 +171,23 @@ class RailDetectorNode(Node):
                 max(self.forward_span, self.follow_target_lookahead),
             )
         )
+        self._publish_detection_scalars(detection)
+
+    def _publish_detection_scalars(self, detection):
+        line = detection['line']
+        if line is None:
+            center_offset = float('nan')
+            tangent_yaw = float('nan')
+        else:
+            center_offset = float(line['signed_offset'])
+            tangent_yaw = float(line['yaw'])
+
+        follow_target = detection['follow_target']
+        target_distance = -1.0 if follow_target is None else float(follow_target['distance'])
+
+        self.center_offset_pub.publish(Float32(data=center_offset))
+        self.tangent_yaw_pub.publish(Float32(data=tangent_yaw))
+        self.target_distance_pub.publish(Float32(data=target_distance))
 
     def _decode_grid_map(self, msg):
         """Decode the published GridMap message back into a 2D elevation array."""
