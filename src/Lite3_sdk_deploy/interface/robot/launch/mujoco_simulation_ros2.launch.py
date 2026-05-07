@@ -10,12 +10,10 @@ from ament_index_python.packages import get_package_share_directory
 def launch_setup(context, *args, **kwargs):
     mode = int(LaunchConfiguration('mode').perform(context))
     localization = LaunchConfiguration('localization').perform(context)
-    localization = localization.lower() == 'true'
-    control_type = int(LaunchConfiguration('control_type').perform(context))
+    localization = localization == 'True' or localization == 'true'
     nav2_params_filepath_launch_arg = LaunchConfiguration('nav2_params_filepath')
     use_sim_time = LaunchConfiguration("use_sim_time")
     database_path = LaunchConfiguration("database_path")
-    scene_id = int(LaunchConfiguration('scene_id').perform(context))
 
     nav2_package_share = FindPackageShare("nav2_bringup").perform(context)
     lite3_package_share = FindPackageShare("lite3_sdk_deploy").perform(context)
@@ -29,78 +27,48 @@ def launch_setup(context, *args, **kwargs):
         "/launch/rviz_launch.py"
     )
 
-    ## rtabmap modes
     if mode == 0:
         rtabmap_mode = "lidar"
         rviz_filepath = f"{lite3_package_share}/config/mapping_lidar_costmaps.rviz"
-        enable_lidar = True
-        enable_depth = False
-        enable_color = False
     elif mode == 1:
         rtabmap_mode = "rgbd"
         rviz_filepath = f"{lite3_package_share}/config/mapping_rgbd_costmaps.rviz"
-        enable_lidar = False
-        enable_depth = True
-        enable_color = True
     else:
         rtabmap_mode = "rgbd_lidar"
         rviz_filepath = f"{lite3_package_share}/config/mapping_rgbd_lidar_costmaps.rviz"
-        enable_lidar = True
-        enable_depth = True
-        enable_color = True
 
-
-    enable_pointcloud = LaunchConfiguration('enable_pointcloud').perform(context).lower() == 'true'
-
-    rtabmap_args = {
-        "use_sim_time": use_sim_time,
-        "localization": str(localization).lower(),
-        "database_path": database_path,
-    }
-
-    ## rl_deploy
-    rl_deploy_prefix = ''
-    if control_type == 0:
-        rl_deploy_args = ["--twist"]
-    elif control_type == 1:
-        rl_deploy_args = []
-        rl_deploy_prefix = 'xterm -e'
-    else:
-        rl_deploy_args = ["--gamepad"]
-
-    ## scene
-    mujoco_simulation_ros2_params = {
-        "enable_lidar": enable_lidar,
-        "enable_depth": enable_depth,
-        "enable_color": enable_color,
-        "enable_pointcloud": enable_pointcloud,
-    }
-
-    if scene_id == 0:
-        mujoco_simulation_ros2_params["use_procedural_scene"] = False
-        rtabmap_args["max_ground_height"] = '0.3'
-        rtabmap_args["max_ground_angle"] = '60'
-    elif scene_id == 1:
-        mujoco_simulation_ros2_params["use_procedural_scene"] = True
-        mujoco_simulation_ros2_params["procedural_env_seed"] = 1234
+    rtabmap_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(f"{lite3_package_share}/launch/rtabmap_{rtabmap_mode}.launch.py"),
+        launch_arguments={
+            "use_sim_time": use_sim_time,
+            "localization": "false",
+            "database_path": database_path,
+        }.items(),
+    )
 
     return [
+
         # MuJoCo simulation
         Node(
             package='lite3_sdk_deploy', 
             executable='mujoco_simulation_ros2.py',
             output='screen',
-            parameters = [mujoco_simulation_ros2_params],
+            parameters = [{
+                'use_procedural_scene': True,
+                'procedural_env_seed': 1234,
+            }],
         ),
 
-        # RL controller
+        # RL controller with twist input
         Node(
             package='lite3_sdk_deploy', 
             executable='rl_deploy',
             output='screen',
-            arguments=rl_deploy_args,
-            prefix=rl_deploy_prefix,
+            arguments=['--twist']
         ),
+
+        # RTAB-Map
+        rtabmap_launch, 
 
         # Navigation (planner + controller)
         IncludeLaunchDescription(
@@ -116,12 +84,6 @@ def launch_setup(context, *args, **kwargs):
             launch_arguments=[
                 ('rviz_config', rviz_filepath)
             ]
-        ),
-
-        # RTAB-Map launch
-        IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(f"{lite3_package_share}/launch/rtabmap_{rtabmap_mode}.launch.py"),
-            launch_arguments=rtabmap_args.items(),
         )
     ]
 
@@ -132,23 +94,11 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             'mode', default_value='2',
-            description='RTAB-Map mode: 0 (lidar), 1 (rgbd), 2 (lidar+rgbd)'
-        ),
+            description='RTAB-Map mode: 0 (lidar), 1 (rgbd), 2 (lidar+rgbd). Default: 2'),
 
         DeclareLaunchArgument(
-            'enable_pointcloud', default_value='false',
-            description='Publish RealSense pointcloud (debug; off by default)'
-        ),
-
-        DeclareLaunchArgument(
-            'localization', default_value='false',
-            description='Launch in localization mode.'
-        ),
-
-        DeclareLaunchArgument(
-            'control_type', default_value='0',
-            description='Joints control type: 0 (twist), 1 (keyboard), 2 (gamepad)'
-        ),
+            'localization', default_value='true',
+            description='Launch in localization mode.'),
 
         DeclareLaunchArgument(
             'nav2_params_filepath',
@@ -166,11 +116,6 @@ def generate_launch_description():
                 'config', 'mapping2.rviz'
             ]),
             description='the file path to Nav2 rviz config'
-        ),
-
-        DeclareLaunchArgument(
-            'scene_id', default_value='0',
-            description='Specify scene to launch: 0 (deeprobotics scene), 1 (procedural scene).'
         ),
 
         OpaqueFunction(function=launch_setup)
