@@ -77,25 +77,30 @@ class RailTargetFollowerNode(Node):
             0.1,
             'Additional distance margin before forward motion resumes.',
         ))
+        self.min_linear_x = float(declare(
+            'min_linear_x',
+            0.4,
+            'Minimum forward command that reliably starts locomotion.',
+        ))
         self.max_linear_x = float(declare(
             'max_linear_x',
-            0.65,
+            0.55,
             'Maximum forward body-frame speed command in meters per second.',
+        ))
+        self.distance_error_for_max_speed = float(declare(
+            'distance_error_for_max_speed',
+            1.5,
+            'Distance error at which forward speed reaches max_linear_x.',
         ))
         self.max_linear_y = float(declare(
             'max_linear_y',
-            0.5,
+            0.4,
             'Maximum lateral body-frame speed command in meters per second.',
         ))
         self.max_angular_z = float(declare(
             'max_angular_z',
             0.5,
             'Maximum yaw-rate command in radians per second.',
-        ))
-        self.k_distance = float(declare(
-            'k_distance',
-            0.7,
-            'Gain that converts target distance error into along-rail speed.',
         ))
         self.k_center = float(declare(
             'k_center',
@@ -177,13 +182,10 @@ class RailTargetFollowerNode(Node):
         )
         normal = (-tangent[1], tangent[0])
 
-        along_speed = 0.0
-        if distance_error > self.target_distance_deadband:
-            along_speed = _clamp(
-                self.k_distance * (distance_error - self.target_distance_deadband),
-                self.max_linear_x * 0.8,
-                self.max_linear_x,
-            )
+        along_speed = self._compute_along_speed(distance_error)
+        if along_speed <= 0.0:
+            self.publish_stop()
+            return
 
         lateral_speed = _clamp(
             -self.k_center * self.latest_center_offset,
@@ -208,6 +210,16 @@ class RailTargetFollowerNode(Node):
 
     def publish_stop(self):
         self.cmd_pub.publish(Twist())
+
+    def _compute_along_speed(self, distance_error):
+        effective_error = distance_error - self.target_distance_deadband
+        if effective_error <= 0.0:
+            return 0.0
+
+        min_linear_x = _clamp(self.min_linear_x, 0.0, self.max_linear_x)
+        ramp_distance = max(1e-6, self.distance_error_for_max_speed)
+        ramp = _clamp(effective_error / ramp_distance, 0.0, 1.0)
+        return min_linear_x + ramp * (self.max_linear_x - min_linear_x)
 
     def _is_stale(self, now):
         return (

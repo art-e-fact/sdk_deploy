@@ -304,7 +304,7 @@ class RailNetworkBuilder:
     max_road_length: float = 30.0
     rail_spec: RailSpec = field(default_factory=lambda: JIS_60KG)
     sleeper_spacing: float = 0.6
-    sleeper_size: tuple[float, float, float] = (0.2, 1.4, 0.07)
+    sleeper_size: tuple[float, float, float] = (0.2, 1.4, 0.03)
 
     def _grow_road(self, rng, start, n_steps):
         """Grow a single road from *start* ``(x, y, heading_deg)`` for *n_steps*."""
@@ -906,8 +906,8 @@ def build_railroad_spec(
     n_roads: int = 5,
     terrain: TerrainSpec | None | object = _TERRAIN_DEFAULT,
     follow_target_start: float = 0.7,
-    follow_target_speed: float = 0.2,
-    follow_target_start_wait_sec: float = 15.0,
+    follow_target_speed: float = 0.25,
+    follow_target_start_wait_sec: float = 12.0,
     **builder_kwargs,
 ) -> tuple[mujoco.MjSpec, dict]:
     rng = np.random.default_rng(seed)

@@ -27,10 +27,11 @@ def launch_setup(context, *args, **kwargs):
     use_keyboard_teleop = LaunchConfiguration('use_keyboard_teleop')
     use_joy_teleop = LaunchConfiguration('use_joy_teleop')
     follow_distance = LaunchConfiguration('follow_distance')
+    min_linear_x = LaunchConfiguration('min_linear_x')
     max_linear_x = LaunchConfiguration('max_linear_x')
+    distance_error_for_max_speed = LaunchConfiguration('distance_error_for_max_speed')
     max_linear_y = LaunchConfiguration('max_linear_y')
     max_angular_z = LaunchConfiguration('max_angular_z')
-    k_distance = LaunchConfiguration('k_distance')
     k_center = LaunchConfiguration('k_center')
     k_heading = LaunchConfiguration('k_heading')
     stale_timeout_sec = LaunchConfiguration('stale_timeout_sec')
@@ -118,10 +119,11 @@ def launch_setup(context, *args, **kwargs):
                     'tangent_yaw_topic': '/rail_detector/tangent_yaw',
                     'target_distance_topic': '/rail_detector/target_distance',
                     'follow_distance': follow_distance,
+                    'min_linear_x': min_linear_x,
                     'max_linear_x': max_linear_x,
+                    'distance_error_for_max_speed': distance_error_for_max_speed,
                     'max_linear_y': max_linear_y,
                     'max_angular_z': max_angular_z,
-                    'k_distance': k_distance,
                     'k_center': k_center,
                     'k_heading': k_heading,
                     'stale_timeout_sec': stale_timeout_sec,
@@ -145,7 +147,6 @@ def launch_setup(context, *args, **kwargs):
             output='screen',
             arguments=['--twist'],
         ),
-
         Node(
             package='teleop_twist_keyboard',
             executable='teleop_twist_keyboard',
@@ -159,7 +160,6 @@ def launch_setup(context, *args, **kwargs):
                 ])
             ),
         ),
-
         Node(
             package='joy',
             executable='joy_node',
@@ -167,7 +167,6 @@ def launch_setup(context, *args, **kwargs):
             output='screen',
             condition=IfCondition(LaunchConfiguration('use_joy_teleop')),
         ),
-
         Node(
             package='teleop_twist_joy',
             executable='teleop_node',
@@ -177,7 +176,6 @@ def launch_setup(context, *args, **kwargs):
             remappings=[('cmd_vel', '/cmd_vel')],
             condition=IfCondition(LaunchConfiguration('use_joy_teleop')),
         ),
-
         Node(
             package='rviz2',
             executable='rviz2',
@@ -201,7 +199,6 @@ def generate_launch_description():
         DeclareLaunchArgument('procedural_env_seed', default_value='123'),
         DeclareLaunchArgument('headless', default_value='false'),
         DeclareLaunchArgument('use_rviz', default_value='true'),
-
         DeclareLaunchArgument('enable_lidar', default_value='false'),
         DeclareLaunchArgument('enable_mid360', default_value='true'),
         DeclareLaunchArgument('enable_depth', default_value='false'),
@@ -212,16 +209,25 @@ def generate_launch_description():
             default_value='true',
             description='Launch the simple local heightmap, rail detector, and rail follower nodes',
         ),
-
         DeclareLaunchArgument(
             'follow_distance',
             default_value='1.5',
             description='Desired stand-off distance to the detected target in meters',
         ),
         DeclareLaunchArgument(
+            'min_linear_x',
+            default_value='0.35',
+            description='Minimum forward command that reliably starts locomotion',
+        ),
+        DeclareLaunchArgument(
             'max_linear_x',
-            default_value='0.55',
+            default_value='0.45',
             description='Maximum forward body-frame speed command in meters per second',
+        ),
+        DeclareLaunchArgument(
+            'distance_error_for_max_speed',
+            default_value='1.5',
+            description='Distance error at which forward speed reaches max_linear_x',
         ),
         DeclareLaunchArgument(
             'max_linear_y',
@@ -232,11 +238,6 @@ def generate_launch_description():
             'max_angular_z',
             default_value='0.5',
             description='Maximum yaw-rate command in radians per second',
-        ),
-        DeclareLaunchArgument(
-            'k_distance',
-            default_value='0.7',
-            description='Gain that converts target distance error into along-rail speed',
         ),
         DeclareLaunchArgument(
             'k_center',
@@ -253,7 +254,6 @@ def generate_launch_description():
             default_value='0.5',
             description='Maximum wall-time age accepted for detector and odometry inputs',
         ),
-
         DeclareLaunchArgument(
             'use_keyboard_teleop',
             default_value='false',
@@ -264,6 +264,5 @@ def generate_launch_description():
             default_value='false',
             description='Launch joy_node + teleop_twist_joy',
         ),
-
         OpaqueFunction(function=launch_setup),
     ])
