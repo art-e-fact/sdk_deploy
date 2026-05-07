@@ -67,19 +67,19 @@ ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py mode:=2 control_ty
 
 In RViz2: Set **2D Goal Pose** to send a navigation goal
 
-### Optional: Generated Scenes (MuJoCo)
+### Optional: Procedural Scene (MuJoCo)
 
-By default, simulation uses the authored static scene. To generate a scene at runtime, choose a `scene_type`:
+By default, simulation uses the authored static scene. To generate the environment procedurally at runtime, use:
 
 ```bash
-ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py --ros-args -p scene_type:=shapes
+ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py --ros-args -p use_procedural_scene:=true
 ```
 
-Use `scene_type:=railroad` for the railroad generator. Optional seed for reproducible layouts:
+Optional seed for reproducible layouts:
 
 ```bash
 ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py --ros-args \
-  -p scene_type:=railroad \
+  -p use_procedural_scene:=true \
   -p procedural_env_seed:=1234
 ```
 
@@ -105,9 +105,8 @@ ros2 launch lite3_sdk_deploy autonomous_mapping.launch.py headless:=true mode:=2
 
 
 Notes:
-- In `scene_type:=shapes`, the waypoint mission is generated from the scene graph to traverse all free-space edges, so some waypoints may be revisited by design.
-- In `scene_type:=railroad`, waypoints follow only the first main rail line.
-- This mode is a coverage helper and does not perform reactive obstacle avoidance beyond following the generated route.
+- The waypoint mission is generated from the scene graph to traverse all free-space edges (some waypoints may be revisited by design).
+- This mode is a coverage helper and does not perform reactive obstacle avoidance beyond following the free-space corridors generated in the procedural map.
 - Waypoints are published on `/procedural_waypoints` (`geometry_msgs/PoseArray`, `odom` frame) and velocity commands are published on `/cmd_vel`.
 
 
@@ -122,6 +121,36 @@ ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
 # Terminal 2 — RL controller with twist input (auto stands up + enters RL mode after ~5s)
 ros2 run lite3_sdk_deploy rl_deploy --twist
 ```
+
+### Autonomous Rail Target Following
+
+To launch the full railroad-following stack in one command (MuJoCo + local heightmap + rail detector + rail target follower + RL twist controller + RViz), use:
+
+```bash
+source install/setup.bash
+source venv/bin/activate
+ros2 launch lite3_sdk_deploy sim_rail_target_follow.launch.py
+```
+
+This launch file defaults to the railroad scene with Mid360 enabled, local heightmap enabled, and `procedural_env_seed:=123`.
+
+Useful tuning arguments:
+- `follow_distance`: stop distance to keep from the detected target. Default: `1.5`
+- `max_linear_x`: max forward speed. Default: `0.35`
+- `max_linear_y`: max lateral centering speed. Default: `0.2`
+- `max_angular_z`: max yaw-rate command. Default: `0.5`
+
+Example with custom follow distance and speed limits:
+
+```bash
+ros2 launch lite3_sdk_deploy sim_rail_target_follow.launch.py \
+  follow_distance:=2.0 \
+  max_linear_x:=0.25 \
+  max_linear_y:=0.15 \
+  max_angular_z:=0.4
+```
+
+The follower publishes to `/cmd_vel` and will stop if the rail line is invalid, the target is not detected, or the target is already within the configured follow distance.
 
 ### Manual Velocity Commands
 
