@@ -6,7 +6,7 @@ from visualization_msgs.msg import Marker, MarkerArray
 
 
 def build_markers(frame_id, stamp, detection, forward_span):
-    """Build RViz markers for slice samples, rail hits, and the fitted centerline."""
+    """Build RViz markers for slice samples, rail hits, the centerline, and follow targets."""
     msg = MarkerArray()
     msg.markers.append(_delete_all_marker(frame_id, stamp))
 
@@ -57,9 +57,43 @@ def build_markers(frame_id, stamp, detection, forward_span):
             )
         )
 
+    if len(detection['follow_target_points']) != 0:
+        msg.markers.append(
+            _sphere_list_marker(
+                frame_id,
+                stamp,
+                namespace='follow_target_candidates',
+                marker_id=102,
+                points=detection['follow_target_points'],
+                rgb=(1.0, 0.55, 0.1),
+                scale=0.08,
+            )
+        )
+
+    if detection['follow_target'] is not None:
+        msg.markers.append(
+            _cylinder_marker(
+                frame_id,
+                stamp,
+                namespace='follow_target',
+                marker_id=103,
+                x=float(detection['follow_target']['point'][0]),
+                y=float(detection['follow_target']['point'][1]),
+                z=0.9,
+                rgb=(1.0, 0.5, 0.0),
+                alpha=0.5,
+                diameter=0.34,
+                height=1.8,
+            )
+        )
+
+    z_level = _marker_height(
+        detection['midpoints'],
+        detection['hits'],
+        detection['follow_target_points'],
+    )
     if detection['line'] is not None:
         line = detection['line']
-        z_level = _marker_height(detection['midpoints'], detection['hits'])
         start = line['center'] - 0.8 * forward_span * line['tangent']
         end = line['center'] + 0.8 * forward_span * line['tangent']
         msg.markers.append(
@@ -81,6 +115,15 @@ def build_markers(frame_id, stamp, detection, forward_span):
     else:
         text = 'rail parse incomplete'
 
+    if detection['follow_target'] is None:
+        text = f'{text}\nfollow_target=none'
+    else:
+        text = (
+            f'{text}\n'
+            f'follow_target={detection["follow_target"]["distance"]:.2f} m '
+            f'(h={detection["follow_target"]["height"]:.2f} m)'
+        )
+
     robot = detection['robot_xy']
     msg.markers.append(
         _text_marker(
@@ -90,7 +133,7 @@ def build_markers(frame_id, stamp, detection, forward_span):
             marker_id=300,
             x=float(robot[0]),
             y=float(robot[1]),
-            z=_marker_height(detection['midpoints'], detection['hits']) + 0.25,
+            z=z_level + 0.25,
             text=text,
         )
     )
@@ -130,6 +173,25 @@ def _sphere_list_marker(frame_id, stamp, namespace, marker_id, points, rgb, scal
     return marker
 
 
+def _cylinder_marker(frame_id, stamp, namespace, marker_id, x, y, z, rgb, alpha, diameter, height):
+    marker = Marker()
+    marker.header.frame_id = frame_id
+    marker.header.stamp = stamp
+    marker.ns = namespace
+    marker.id = marker_id
+    marker.type = Marker.CYLINDER
+    marker.action = Marker.ADD
+    marker.scale.x = diameter
+    marker.scale.y = diameter
+    marker.scale.z = height
+    marker.color.r, marker.color.g, marker.color.b = rgb
+    marker.color.a = alpha
+    marker.pose.position.x = x
+    marker.pose.position.y = y
+    marker.pose.position.z = z
+    return marker
+
+
 def _line_marker(frame_id, stamp, namespace, marker_id, start, end, rgb, width):
     marker = Marker()
     marker.header.frame_id = frame_id
@@ -165,9 +227,11 @@ def _text_marker(frame_id, stamp, namespace, marker_id, x, y, z, text):
     return marker
 
 
-def _marker_height(midpoints, hits):
+def _marker_height(midpoints, hits, follow_target_points):
     if len(midpoints) != 0:
         return float(np.nanmedian(midpoints[:, 2]))
     if len(hits) != 0:
         return float(np.nanmedian(hits[:, 2]))
+    if len(follow_target_points) != 0:
+        return float(np.nanmedian(follow_target_points[:, 2]))
     return 0.0

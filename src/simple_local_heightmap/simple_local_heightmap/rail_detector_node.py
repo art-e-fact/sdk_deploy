@@ -4,6 +4,7 @@ import numpy as np
 import rclpy
 from grid_map_msgs.msg import GridMap
 from nav_msgs.msg import Odometry
+from rcl_interfaces.msg import ParameterDescriptor
 from rclpy.node import Node
 from visualization_msgs.msg import MarkerArray
 
@@ -14,29 +15,112 @@ class RailDetectorNode(Node):
     def __init__(self):
         super().__init__('rail_detector_node')
 
-        self.heightmap_topic = self.declare_parameter(
-            'heightmap_topic', '/local_heightmap'
-        ).value
-        self.odom_topic = self.declare_parameter('odom_topic', '/odom').value
-        self.marker_topic = self.declare_parameter(
-            'marker_topic', '/rail_detector/markers'
-        ).value
-        self.track_gauge = float(self.declare_parameter('track_gauge', 1.067).value)
-        self.rail_width = float(self.declare_parameter('rail_width', 0.15).value)
-        self.gauge_tolerance = float(self.declare_parameter('gauge_tolerance', 0.40).value)
-        self.angle_sweep_deg = float(self.declare_parameter('angle_sweep_deg', 40.0).value)
-        self.angle_step_deg = float(self.declare_parameter('angle_step_deg', 5.0).value)
-        self.min_rail_height = float(self.declare_parameter('min_rail_height', 0.05).value)
-        self.max_rail_height = float(self.declare_parameter('max_rail_height', 0.30).value)
-        self.max_rail_height_difference = float(
-            self.declare_parameter('max_rail_height_difference', 0.08).value
-        )
-        self.forward_span = float(self.declare_parameter('forward_span', 2.6).value)
-        self.num_slices = max(3, int(self.declare_parameter('num_slices', 15).value))
-        self.lateral_search_width = float(
-            self.declare_parameter('lateral_search_width', 1.8).value
-        )
+        def declare(name, default, description):
+            return self.declare_parameter(
+                name,
+                default,
+                ParameterDescriptor(description=description),
+            ).value
 
+        self.heightmap_topic = declare(
+            'heightmap_topic',
+            '/local_heightmap',
+            'Input GridMap topic with the local elevation layer.',
+        )
+        self.odom_topic = declare(
+            'odom_topic',
+            '/odom',
+            'Odometry topic used for robot position and heading.',
+        )
+        self.marker_topic = declare(
+            'marker_topic',
+            '/rail_detector/markers',
+            'Output MarkerArray topic for RViz debug markers.',
+        )
+        self.track_gauge = float(declare(
+            'track_gauge',
+            1.067,
+            'Expected distance between the two rails in meters.',
+        ))
+        self.rail_width = float(declare(
+            'rail_width',
+            0.15,
+            'Expected lateral width of one rail in meters.',
+        ))
+        self.gauge_tolerance = float(declare(
+            'gauge_tolerance',
+            0.40,
+            'Maximum rail-pair gauge error allowed in one slice.',
+        ))
+        self.angle_sweep_deg = float(declare(
+            'angle_sweep_deg',
+            40.0,
+            'Half-range of the center-slice heading search in degrees.',
+        ))
+        self.angle_step_deg = float(declare(
+            'angle_step_deg',
+            5.0,
+            'Heading increment used during the center-slice search.',
+        ))
+        self.min_rail_height = float(declare(
+            'min_rail_height',
+            0.05,
+            'Minimum height above the local baseline to accept a rail hit.',
+        ))
+        self.max_rail_height = float(declare(
+            'max_rail_height',
+            0.30,
+            'Maximum height above the local baseline to accept a rail hit.',
+        ))
+        self.max_rail_height_difference = float(
+            declare(
+                'max_rail_height_difference',
+                0.08,
+                'Maximum height mismatch allowed between the left and right rail.',
+            )
+        )
+        self.forward_span = float(declare(
+            'forward_span',
+            2.6,
+            'Total forward span covered by the sampled rail slices.',
+        ))
+        self.num_slices = max(3, int(declare(
+            'num_slices',
+            15,
+            'Number of cross-sections sampled across the forward span.',
+        )))
+        self.lateral_search_width = float(
+            declare(
+                'lateral_search_width',
+                1.8,
+                'Half-width of each sampled cross-section in meters.',
+            )
+        )
+        self.follow_target_lookahead = float(declare(
+            'follow_target_lookahead',
+            8.0,
+            'How far ahead along the detected rail center to search for a follow target.',
+        ))
+        self.follow_target_kernel_size = float(declare(
+            'follow_target_kernel_size',
+            0.35,
+            'Width of the center sample window used to measure the follow target.',
+        ))
+        self.follow_target_sample_step = float(declare(
+            'follow_target_sample_step',
+            0.10,
+            'Distance between follow-target samples along the rail center.',
+        ))
+        self.follow_target_min_height = float(declare(
+            'follow_target_min_height',
+            0.1,
+            'Minimum rise above the detected rail height to count as a follow target.',
+        ))
+        self.follow_target_max_height = float(declare(
+            'follow_target_max_height',
+            2.2,
+            'Maximum rise above the detected rail height to keep the follow target plausible.',
+        ))
         self.latest_odom = None
 
         self.marker_pub = self.create_publisher(MarkerArray, self.marker_topic, 10)
@@ -61,7 +145,12 @@ class RailDetectorNode(Node):
 
         detection = self._detect_rails(grid, self.latest_odom)
         self.marker_pub.publish(
-            build_markers(msg.header.frame_id, msg.header.stamp, detection, self.forward_span)
+            build_markers(
+                msg.header.frame_id,
+                msg.header.stamp,
+                detection,
+                max(self.forward_span, self.follow_target_lookahead),
+            )
         )
 
     def _decode_grid_map(self, msg):
@@ -138,7 +227,14 @@ class RailDetectorNode(Node):
                 resolution=grid['resolution'],
             )
 
-            slice_result = {'xy': xy, 'z': z, 'left': None, 'right': None, 'midpoint': None}
+            slice_result = {
+                'xy': xy,
+                'z': z,
+                'left': None,
+                'right': None,
+                'midpoint': None,
+                'follow_target': None,
+            }
             if pair is not None:
                 left_point, right_point = pair
                 midpoint = 0.5 * (left_point + right_point)
@@ -151,6 +247,13 @@ class RailDetectorNode(Node):
             slices.append(slice_result)
 
         line = self._fit_centerline(robot_xy, forward, midpoints)
+        rail_baseline = self._rail_height_baseline(hits)
+        follow_target_candidates, follow_target = self._detect_follow_target(
+            grid,
+            robot_xy,
+            line,
+            rail_baseline,
+        )
         return {
             'robot_xy': robot_xy,
             'forward': forward,
@@ -158,6 +261,12 @@ class RailDetectorNode(Node):
             'midpoints': np.asarray(midpoints, dtype=np.float32),
             'hits': np.asarray(hits, dtype=np.float32),
             'line': line,
+            'rail_baseline': rail_baseline,
+            'follow_target_points': np.asarray(
+                [candidate['point'] for candidate in follow_target_candidates],
+                dtype=np.float32,
+            ),
+            'follow_target': follow_target,
         }
 
     def _find_best_slice_axes(self, robot_xy, yaw, lateral_offsets, grid):
@@ -292,6 +401,53 @@ class RailDetectorNode(Node):
 
         return best_pair
 
+    def _rail_height_baseline(self, hits):
+        return self._safe_nanmedian(np.asarray(hits, dtype=np.float32)[:, 2]) if hits else float('nan')
+
+    def _detect_follow_target(self, grid, robot_xy, line, rail_baseline):
+        if line is None or not math.isfinite(rail_baseline):
+            return [], None
+
+        step = max(float(grid['resolution']), self.follow_target_sample_step)
+        if self.follow_target_lookahead <= 0.0 or self.follow_target_kernel_size <= 0.0:
+            return [], None
+
+        tangent = line['tangent']
+        normal = np.array([-tangent[1], tangent[0]], dtype=np.float32)
+        start = robot_xy - line['signed_offset'] * normal
+        kernel_half_width = 0.5 * self.follow_target_kernel_size
+        sample_count = max(3, int(round(self.follow_target_kernel_size / grid['resolution'])) + 1)
+        lateral_offsets = np.linspace(
+            -kernel_half_width,
+            kernel_half_width,
+            sample_count,
+            dtype=np.float32,
+        )
+
+        candidates = []
+        distances = np.arange(0.0, self.follow_target_lookahead + 0.5 * step, step, dtype=np.float32)
+        for distance in distances:
+            center = start + float(distance) * tangent
+            xy = center + lateral_offsets[:, None] * normal[None, :]
+            z = self._sample_grid(grid, xy)
+            peak = self._safe_nanpercentile(z, 90.0)
+            if not math.isfinite(peak):
+                continue
+
+            height = float(peak - rail_baseline)
+            if height < self.follow_target_min_height or height > self.follow_target_max_height:
+                continue
+
+            target = {
+                'point': np.array([center[0], center[1], peak], dtype=np.float32),
+                'distance': float(distance),
+                'height': height,
+            }
+            candidates.append(target)
+            return candidates, target
+
+        return candidates, None
+
     def _extract_slice_groups(self, xy, lateral_offsets, z, smooth, mask, resolution):
         """Split one slice into contiguous height-consistent groups."""
         groups = []
@@ -392,6 +548,14 @@ class RailDetectorNode(Node):
         if len(finite) == 0:
             return float('nan')
         return float(np.median(finite))
+
+    @staticmethod
+    def _safe_nanpercentile(values, percentile):
+        finite = np.asarray(values, dtype=np.float32)
+        finite = finite[np.isfinite(finite)]
+        if len(finite) == 0:
+            return float('nan')
+        return float(np.percentile(finite, percentile))
 
     @staticmethod
     def _yaw_from_quaternion(quaternion):

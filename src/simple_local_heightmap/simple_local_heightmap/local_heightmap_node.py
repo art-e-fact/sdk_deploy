@@ -37,7 +37,7 @@ class LocalHeightmapNode(Node):
             self.declare_parameter('front_clear_enabled', False).value
         )
         self.front_clear_length = float(
-            self.declare_parameter('front_clear_length', 1.5).value
+            self.declare_parameter('front_clear_length', 3.5).value
         )
         self.front_clear_width = float(
             self.declare_parameter('front_clear_width', 1.0).value

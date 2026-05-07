@@ -15,7 +15,7 @@ the node can apply a shorter timeout inside a rectangle defined in the robot fra
 
 - `stale_time_sec` (`1.0`): default timeout used outside the front fast-clear rectangle
 - `front_clear_enabled` (`false`): enables a robot-frame rectangle with a shorter timeout
-- `front_clear_length` (`1.5`): length of the fast-clear rectangle in meters
+- `front_clear_length` (`3.5`): length of the fast-clear rectangle in meters
 - `front_clear_width` (`1.0`): width of the fast-clear rectangle in meters
 - `front_clear_offset_x` (`0.25`): forward offset from the robot origin to the start of the rectangle
 - `front_stale_time_sec` (`0.75`): timeout used for cells inside the fast-clear rectangle
@@ -46,6 +46,13 @@ It first sweeps the center cross-section around the robot heading, keeps the ang
 - `forward_span` (`2.6`): total span covered by the slice set along the robot heading
 - `num_slices` (`15`): number of lateral slices used by the parser
 - `lateral_search_width` (`1.8`): half-width of each lateral slice in meters
+- `follow_target_lookahead` (`8.0`): forward distance along the detected rail center checked for a follow target
+- `follow_target_kernel_size` (`0.35`): width of the center sample window used to measure a follow target
+- `follow_target_sample_step` (`0.10`): distance between follow-target samples along the rail center
+- `follow_target_min_height` (`0.10`): minimum height above the detected rail height to treat a center blob as a follow target
+- `follow_target_max_height` (`2.2`): maximum allowed height above the detected rail height for a follow target
+
+After the rail centerline is detected, the follow target detector samples independently along that centerline and keeps the first center measurement that rises enough above the detected rail height.
 
 The slice grouping step uses the height-map resolution to decide when neighboring samples are similar enough to stay in the same group, so there is no extra grouping threshold parameter.
 
@@ -54,7 +61,8 @@ The slice grouping step uses the height-map resolution to decide when neighborin
 - slice profile markers for each sampled cross-section
 - sphere markers for left and right rail hits plus fitted midpoints
 - a centerline marker showing the local rail tangent
-- a text marker showing the signed robot offset from the fitted rail center
+- follow target candidate markers inside the rail corridor and a highlighted nearest follow target
+- a text marker showing the signed robot offset from the fitted rail center and the nearest follow target distance
 
 ### Example
 

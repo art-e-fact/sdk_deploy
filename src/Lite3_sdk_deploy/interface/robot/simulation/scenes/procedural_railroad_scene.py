@@ -905,9 +905,9 @@ def build_railroad_spec(
     seed: int,
     n_roads: int = 5,
     terrain: TerrainSpec | None | object = _TERRAIN_DEFAULT,
-    follow_target_start: float = 0.4,
-    follow_target_speed: float = 0.5,
-    follow_target_start_wait_sec: float = 5.0,
+    follow_target_start: float = 0.7,
+    follow_target_speed: float = 0.2,
+    follow_target_start_wait_sec: float = 15.0,
     **builder_kwargs,
 ) -> tuple[mujoco.MjSpec, dict]:
     rng = np.random.default_rng(seed)
