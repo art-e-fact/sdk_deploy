@@ -21,6 +21,8 @@ MID360_FRAME_ID = "mid360"
 MID360_TOPIC = "/mid360/points"
 MID360_FREQUENCY_HZ = 10.0
 MID360_PATTERN_FILE = "mid360.npy"
+MID360_DEFAULT_MOUNT_PITCH_DEG = 30.0
+MID360_DEFAULT_MOUNT_OFFSET_X_M = 0.0
 
 SAMPLES_PER_SCAN = 24000
 RANGE_MIN = 0.1
@@ -29,11 +31,25 @@ RANGE_MAX = 200.0
 
 class Mid360LidarSensor:
     @staticmethod
-    def configure_spec(spec, mid360_xml_path):
+    def configure_spec(
+        spec,
+        mid360_xml_path,
+        mount_pitch_deg: float = MID360_DEFAULT_MOUNT_PITCH_DEG,
+        mount_offset_x: float = MID360_DEFAULT_MOUNT_OFFSET_X_M,
+    ):
         """Attach the Mid360 body to the TORSO mid360_mount site."""
         mid360_spec = mujoco.MjSpec.from_file(mid360_xml_path)
         torso = spec.worldbody.first_body()
         mount_site = next(site for site in torso.sites if site.name == MID360_MOUNT_SITE_NAME)
+        mount_pos = np.array(mount_site.pos, dtype=np.float64)
+        mount_pos[0] += float(mount_offset_x)
+        mount_pitch_rad = np.deg2rad(float(mount_pitch_deg))
+        mount_quat_xyzw = R_scipy.from_euler("y", mount_pitch_rad).as_quat()
+        mount_site.pos = mount_pos
+        mount_site.quat = np.array(
+            [mount_quat_xyzw[3], mount_quat_xyzw[0], mount_quat_xyzw[1], mount_quat_xyzw[2]],
+            dtype=np.float64,
+        )
         spec.attach(mid360_spec, prefix=MID360_ATTACHMENT_PREFIX, site=mount_site)
 
     def __init__(

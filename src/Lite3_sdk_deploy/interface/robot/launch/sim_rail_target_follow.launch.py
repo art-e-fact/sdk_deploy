@@ -18,6 +18,8 @@ def launch_setup(context, *args, **kwargs):
     enable_color = LaunchConfiguration('enable_color')
     enable_pointcloud = LaunchConfiguration('enable_pointcloud')
     enable_heightmap = LaunchConfiguration('enable_heightmap')
+    mid360_mount_pitch = LaunchConfiguration('mid360_mount_pitch')
+    mid360_mount_offset_x = LaunchConfiguration('mid360_mount_offset_x')
 
     enable_mid360_value = enable_mid360.perform(context).lower() == 'true'
     enable_depth_value = enable_depth.perform(context).lower() == 'true'
@@ -63,6 +65,8 @@ def launch_setup(context, *args, **kwargs):
                 'enable_depth': enable_depth,
                 'enable_color': enable_color,
                 'enable_pointcloud': enable_pointcloud,
+                'mid360_mount_pitch': mid360_mount_pitch,
+                'mid360_mount_offset_x': mid360_mount_offset_x,
             }],
         ),
     ]
@@ -204,6 +208,16 @@ def generate_launch_description():
         DeclareLaunchArgument('enable_depth', default_value='false'),
         DeclareLaunchArgument('enable_color', default_value='false'),
         DeclareLaunchArgument('enable_pointcloud', default_value='false'),
+        DeclareLaunchArgument(
+            'mid360_mount_pitch',
+            default_value='30.0',
+            description='Absolute Mid360 mount pitch in degrees about the torso-local Y axis',
+        ),
+        DeclareLaunchArgument(
+            'mid360_mount_offset_x',
+            default_value='0.0',
+            description='Additional Mid360 fore-aft offset in meters along the torso-local X axis',
+        ),
         DeclareLaunchArgument(
             'enable_heightmap',
             default_value='true',

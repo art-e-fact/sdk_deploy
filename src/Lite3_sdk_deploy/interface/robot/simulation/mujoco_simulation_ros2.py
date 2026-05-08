@@ -23,7 +23,12 @@ import mujoco.viewer
 
 from sensors.lidar_sensor import LidarSensor, LIDAR_FREQUENCY_HZ
 from sensors.depth_sensor import DepthSensor, DEPTH_FREQUENCY_HZ
-from sensors.mid360_lidar_sensor import Mid360LidarSensor, MID360_FREQUENCY_HZ
+from sensors.mid360_lidar_sensor import (
+    MID360_DEFAULT_MOUNT_OFFSET_X_M,
+    MID360_DEFAULT_MOUNT_PITCH_DEG,
+    MID360_FREQUENCY_HZ,
+    Mid360LidarSensor,
+)
 from scenes.procedural_scene_generator import build_procedural_spec
 from scenes.procedural_railroad_scene import build_railroad_spec
 
@@ -97,6 +102,8 @@ class MuJoCoSimulationNode(Node):
         self.declare_parameter('enable_depth', False)
         self.declare_parameter('enable_color', False)
         self.declare_parameter('enable_pointcloud', False)
+        self.declare_parameter('mid360_mount_pitch', MID360_DEFAULT_MOUNT_PITCH_DEG)
+        self.declare_parameter('mid360_mount_offset_x', MID360_DEFAULT_MOUNT_OFFSET_X_M)
         scene_type = str(self.get_parameter('scene_type').value).strip().lower()
         configured_seed = int(self.get_parameter('procedural_env_seed').value)
         headless = bool(self.get_parameter('headless').value)
@@ -105,6 +112,8 @@ class MuJoCoSimulationNode(Node):
         enable_depth = bool(self.get_parameter('enable_depth').value)
         enable_color = bool(self.get_parameter('enable_color').value)
         enable_pointcloud = bool(self.get_parameter('enable_pointcloud').value)
+        mid360_mount_pitch_deg = float(self.get_parameter('mid360_mount_pitch').value)
+        mid360_mount_offset_x = float(self.get_parameter('mid360_mount_offset_x').value)
         use_viewer = USE_VIEWER and (not headless)
         self.scene_meta: dict = {}
         self.scene_update: SceneUpdater | None = None
@@ -177,8 +186,16 @@ class MuJoCoSimulationNode(Node):
         if enable_mid360:
             if not os.path.isfile(mid360_xml_path):
                 raise FileNotFoundError(f"Mid360 XML not found: {mid360_xml_path}")
-            Mid360LidarSensor.configure_spec(spec, mid360_xml_path)
-            self.get_logger().info("[INFO] Mid360 model attached via mjSpec")
+            Mid360LidarSensor.configure_spec(
+                spec,
+                mid360_xml_path,
+                mount_pitch_deg=mid360_mount_pitch_deg,
+                mount_offset_x=mid360_mount_offset_x,
+            )
+            self.get_logger().info(
+                f"[INFO] Mid360 model attached via mjSpec "
+                f"(pitch={mid360_mount_pitch_deg:.2f} deg, offset_x={mid360_mount_offset_x:.4f} m)"
+            )
 
         self.model = spec.compile()
         self.model.opt.timestep = DT
