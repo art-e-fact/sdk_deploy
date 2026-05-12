@@ -159,6 +159,15 @@ ros2 launch lite3_sdk_deploy sim_rail_target_follow.launch.py \
   follow_camera_video_path:=/tmp/lite3_rail_follow.mp4
 ```
 
+#### Running tests
+```bash
+# Run with Artefacts CLI
+artefacts run rail_target_follow
+
+# Run with pytest
+pytest -s src/Lite3_sdk_deploy/test/test_sim_rail_target_follow_distance.py
+```
+
 The recorder is disabled by default and writes MP4 files through the simulation venv's `imageio` and `imageio-ffmpeg` packages.
 
 The follower publishes to `/cmd_vel` and will stop if the rail line is invalid, the target is not detected, or the target is already within the configured follow distance.

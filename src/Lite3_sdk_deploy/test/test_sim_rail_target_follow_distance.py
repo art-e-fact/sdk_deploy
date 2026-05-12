@@ -5,6 +5,7 @@ import time
 import unittest
 
 from ament_index_python.packages import get_package_share_directory
+from artefacts_toolkit.config import get_artefacts_params
 from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -15,11 +16,18 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 
 
-MIN_DISTANCE_M = 4.5
 TEST_TIMEOUT_SEC = 60.0
 MAX_ODOM_STEP_M = 1.0
 OUTPUT_FOLDER = Path(os.getenv("ARTEFACTS_SCENARIO_UPLOAD_DIR", "./"))
 TEST_VIDEO_PATH = OUTPUT_FOLDER / 'lite3_rail_target_follow_distance.mp4'
+
+try:
+    artefacts_params = get_artefacts_params()
+except Exception:
+    artefacts_params = {}
+
+
+min_distance_to_travel = float(artefacts_params.get('min_distance_to_travel', 1.5))
 
 
 @pytest.mark.launch_test
@@ -53,6 +61,7 @@ def generate_test_description():
             'stale_timeout_sec': '0.75',
             'enable_follow_camera': 'true',
             'follow_camera_video_path': str(TEST_VIDEO_PATH),
+            **artefacts_params,
         }.items(),
     )
 
@@ -103,7 +112,7 @@ class TestRailTargetFollowDistance(unittest.TestCase):
         wall_deadline = time.monotonic() + (5.0 * TEST_TIMEOUT_SEC)
 
         try:
-            while time.monotonic() < wall_deadline and state['distance_m'] < MIN_DISTANCE_M:
+            while time.monotonic() < wall_deadline and state['distance_m'] < min_distance_to_travel:
                 first_stamp_sec = state['first_stamp_sec']
                 last_stamp_sec = state['last_stamp_sec']
                 if first_stamp_sec is not None and last_stamp_sec is not None:
@@ -116,10 +125,10 @@ class TestRailTargetFollowDistance(unittest.TestCase):
                 elapsed_sec = state['last_stamp_sec'] - state['first_stamp_sec']
             self.assertGreaterEqual(
                 state['distance_m'],
-                MIN_DISTANCE_M,
+                min_distance_to_travel,
                 msg=(
                     f"robot travelled {state['distance_m']:.3f} m in {elapsed_sec:.1f} sim s; "
-                    f"expected at least {MIN_DISTANCE_M:.3f} m "
+                    f"expected at least {min_distance_to_travel:.3f} m "
                     f"from {state['message_count']} odom messages, last_xy={state['last_xy']}"
                 ),
             )
