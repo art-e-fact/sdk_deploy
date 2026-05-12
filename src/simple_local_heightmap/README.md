@@ -21,6 +21,8 @@ the node can apply a shorter timeout inside a rectangle defined in the robot fra
 - `front_clear_offset_x` (`0.25`): forward offset from the robot origin to the start of the rectangle
 - `front_stale_time_sec` (`0.75`): timeout used for cells inside the fast-clear rectangle
 
+The front-clear overlay is published on `/local_heightmap/front_clear_markers` as a `visualization_msgs/MarkerArray` for RViz debugging.
+
 ## rail_detector_node
 
 The detector assumes:

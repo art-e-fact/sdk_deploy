@@ -9,6 +9,9 @@ from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import Float32MultiArray, Header, MultiArrayDimension
 from tf2_ros import Buffer, TransformException, TransformListener
+from visualization_msgs.msg import MarkerArray
+
+from simple_local_heightmap.rail_detector_visualization import build_base_markers
 
 
 class LocalHeightmapNode(Node):
@@ -23,6 +26,7 @@ class LocalHeightmapNode(Node):
         self.debug_topic = self.declare_parameter(
             'debug_cloud_topic', '/local_heightmap/debug_points'
         ).value
+        self.front_clear_marker_topic = '/local_heightmap/front_clear_markers'
         self.map_frame = self.declare_parameter('map_frame', 'odom').value
         self.robot_frame = self.declare_parameter('robot_frame', 'base_link').value
         self.resolution = float(self.declare_parameter('resolution', 0.05).value)
@@ -37,16 +41,16 @@ class LocalHeightmapNode(Node):
             self.declare_parameter('front_clear_enabled', False).value
         )
         self.front_clear_length = float(
-            self.declare_parameter('front_clear_length', 3.5).value
+            self.declare_parameter('front_clear_length', 2.5).value
         )
         self.front_clear_width = float(
             self.declare_parameter('front_clear_width', 1.0).value
         )
         self.front_clear_offset_x = float(
-            self.declare_parameter('front_clear_offset_x', 0.25).value
+            self.declare_parameter('front_clear_offset_x', 0.75).value
         )
         self.front_stale_time_sec = float(
-            self.declare_parameter('front_stale_time_sec', 0.75).value
+            self.declare_parameter('front_stale_time_sec', 0.35).value
         )
         self.max_pose_variance = float(
             self.declare_parameter('max_pose_variance', 0.0).value
@@ -67,6 +71,9 @@ class LocalHeightmapNode(Node):
         self.tf_listener = TransformListener(self.tf_buffer, self)
         self.map_pub = self.create_publisher(GridMap, self.output_topic, 10)
         self.debug_pub = self.create_publisher(PointCloud2, self.debug_topic, 10)
+        self.front_clear_marker_pub = self.create_publisher(
+            MarkerArray, self.front_clear_marker_topic, 10
+        )
         self.create_subscription(PointCloud2, self.cloud_topic, self.cloud_callback, 10)
         self.create_subscription(
             PoseWithCovarianceStamped, self.pose_topic, self.pose_callback, 10
@@ -81,7 +88,8 @@ class LocalHeightmapNode(Node):
                 'Front fast-clear enabled with '
                 f'{self.front_clear_length:.2f} x {self.front_clear_width:.2f} m '
                 f'rectangle, offset {self.front_clear_offset_x:.2f} m, '
-                f'timeout {self.front_stale_time_sec:.2f} s'
+                f'timeout {self.front_stale_time_sec:.2f} s on '
+                f'{self.front_clear_marker_topic}'
             )
 
     def pose_callback(self, msg):
@@ -122,6 +130,13 @@ class LocalHeightmapNode(Node):
         self._expire_stale_cells(scan_time, robot_transform)
         self.map_pub.publish(self._to_grid_map(stamp))
         self.debug_pub.publish(self._to_debug_cloud(stamp))
+        self.front_clear_marker_pub.publish(
+            build_base_markers(
+                self.map_frame,
+                stamp,
+                front_clear_area=self._front_clear_area(robot_transform),
+            )
+        )
 
     def _cloud_to_array(self, msg):
         points = pc2.read_points(msg, field_names=('x', 'y', 'z'), skip_nans=True)
@@ -182,12 +197,16 @@ class LocalHeightmapNode(Node):
         self.elevation[stale] = np.nan
         self.valid[stale] = False
 
+    def _front_clear_active(self):
+        return (
+            self.front_clear_enabled
+            and self.front_stale_time_sec > 0.0
+            and self.front_clear_length > 0.0
+            and self.front_clear_width > 0.0
+        )
+
     def _front_clear_mask(self, robot_transform):
-        if not self.front_clear_enabled:
-            return None
-        if self.front_stale_time_sec <= 0.0:
-            return None
-        if self.front_clear_length <= 0.0 or self.front_clear_width <= 0.0:
+        if not self._front_clear_active():
             return None
 
         x_min, y_min = self._grid_min_corner()
@@ -215,6 +234,22 @@ class LocalHeightmapNode(Node):
             & (x_local <= self.front_clear_offset_x + self.front_clear_length)
             & (np.abs(y_local) <= 0.5 * self.front_clear_width)
         )
+
+    def _front_clear_area(self, robot_transform):
+        if not self._front_clear_active():
+            return None
+
+        translation = robot_transform.transform.translation
+        rotation = robot_transform.transform.rotation
+        return {
+            'origin': np.array([translation.x, translation.y, translation.z], dtype=np.float32),
+            'orientation': np.array(
+                [rotation.x, rotation.y, rotation.z, rotation.w], dtype=np.float32
+            ),
+            'offset_x': self.front_clear_offset_x,
+            'length': self.front_clear_length,
+            'width': self.front_clear_width,
+        }
 
     def _shift_grid_if_needed(self, robot_x, robot_y):
         if self.center_x is None or self.center_y is None:
