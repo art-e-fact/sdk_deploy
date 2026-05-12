@@ -150,6 +150,17 @@ ros2 launch lite3_sdk_deploy sim_rail_target_follow.launch.py \
   max_angular_z:=0.4
 ```
 
+Record a headless follow-camera video while the stack runs:
+
+```bash
+ros2 launch lite3_sdk_deploy sim_rail_target_follow.launch.py \
+  headless:=true \
+  enable_follow_camera:=true \
+  follow_camera_video_path:=/tmp/lite3_rail_follow.mp4
+```
+
+The recorder is disabled by default and writes MP4 files through the simulation venv's `imageio` and `imageio-ffmpeg` packages.
+
 The follower publishes to `/cmd_vel` and will stop if the rail line is invalid, the target is not detected, or the target is already within the configured follow distance.
 
 ### Manual Velocity Commands

@@ -29,6 +29,7 @@ from sensors.mid360_lidar_sensor import (
     MID360_FREQUENCY_HZ,
     Mid360LidarSensor,
 )
+from sensors.follow_camera_recorder import FOLLOW_CAMERA_FPS, FollowCameraRecorder
 from scenes.procedural_scene_generator import build_procedural_spec
 from scenes.procedural_railroad_scene import build_railroad_spec
 
@@ -104,6 +105,8 @@ class MuJoCoSimulationNode(Node):
         self.declare_parameter('enable_pointcloud', False)
         self.declare_parameter('mid360_mount_pitch', MID360_DEFAULT_MOUNT_PITCH_DEG)
         self.declare_parameter('mid360_mount_offset_x', MID360_DEFAULT_MOUNT_OFFSET_X_M)
+        self.declare_parameter('enable_follow_camera', False)
+        self.declare_parameter('follow_camera_video_path', '/tmp/lite3_follow_camera.mp4')
         scene_type = str(self.get_parameter('scene_type').value).strip().lower()
         configured_seed = int(self.get_parameter('procedural_env_seed').value)
         headless = bool(self.get_parameter('headless').value)
@@ -114,6 +117,8 @@ class MuJoCoSimulationNode(Node):
         enable_pointcloud = bool(self.get_parameter('enable_pointcloud').value)
         mid360_mount_pitch_deg = float(self.get_parameter('mid360_mount_pitch').value)
         mid360_mount_offset_x = float(self.get_parameter('mid360_mount_offset_x').value)
+        enable_follow_camera = bool(self.get_parameter('enable_follow_camera').value)
+        follow_camera_video_path = str(self.get_parameter('follow_camera_video_path').value)
         use_viewer = USE_VIEWER and (not headless)
         self.scene_meta: dict = {}
         self.scene_update: SceneUpdater | None = None
@@ -276,6 +281,15 @@ class MuJoCoSimulationNode(Node):
         )
         self.depth_step_interval = int(1.0 / (DEPTH_FREQUENCY_HZ * DT))
 
+        self.follow_camera = FollowCameraRecorder(
+            self.model,
+            self.data,
+            self,
+            enabled=enable_follow_camera,
+            video_path=follow_camera_video_path,
+        )
+        self.follow_camera_step_interval = max(1, int(round(1.0 / (FOLLOW_CAMERA_FPS * DT))))
+
         # Publish all static transforms in one call
         self._publish_static_transforms()
         self._publish_procedural_waypoints()
@@ -429,44 +443,50 @@ class MuJoCoSimulationNode(Node):
         # 主模拟循环
         step = 0
         last_time = time.time()
-        while rclpy.ok():
-            if time.time() - last_time >= DT:
-                last_time = time.time()
-                step += 1
-                # 控制律
-                self._apply_joint_torque()
-                # 模拟一步
-                mujoco.mj_step(self.model, self.data)
+        try:
+            while rclpy.ok():
+                if time.time() - last_time >= DT:
+                    last_time = time.time()
+                    step += 1
+                    # 控制律
+                    self._apply_joint_torque()
+                    # 模拟一步
+                    mujoco.mj_step(self.model, self.data)
 
-                self.timestamp = step * DT
-                self._update_scene(self.timestamp)
-                stamp = self._make_sim_stamp(self.timestamp)
+                    self.timestamp = step * DT
+                    self._update_scene(self.timestamp)
+                    stamp = self._make_sim_stamp(self.timestamp)
 
-                # Keep TF current for exact sensor timestamp lookups.
-                self._publish_odom_and_tf(stamp, publish_odom=False)
+                    # Keep TF current for exact sensor timestamp lookups.
+                    self._publish_odom_and_tf(stamp, publish_odom=False)
 
-                # 采样 & 发送观测
-                self._publish_robot_state(stamp)
-                self._publish_odom_and_tf(stamp)
+                    # 采样 & 发送观测
+                    self._publish_robot_state(stamp)
+                    self._publish_odom_and_tf(stamp)
 
-                # LiDAR scan
-                if step % self.lidar_step_interval == 0:
-                    self.lidar.update(stamp)
+                    # LiDAR scan
+                    if step % self.lidar_step_interval == 0:
+                        self.lidar.update(stamp)
 
-                if step % self.mid360_step_interval == 0:
-                    self.mid360.update(stamp)
+                    if step % self.mid360_step_interval == 0:
+                        self.mid360.update(stamp)
 
-                # Depth camera
-                if step % self.depth_step_interval == 0:
-                    self.depth.update(stamp)
+                    # Depth camera
+                    if step % self.depth_step_interval == 0:
+                        self.depth.update(stamp)
 
-                # Viewer
-                if self.viewer and step % RENDER_INTERVAL == 0:
-                    self.lidar.visualize()
-                    self.viewer.sync()
+                    if step % self.follow_camera_step_interval == 0:
+                        self.follow_camera.update()
 
-            # Handle ROS callbacks
-            rclpy.spin_once(self, timeout_sec=0.0)
+                    # Viewer
+                    if self.viewer and step % RENDER_INTERVAL == 0:
+                        self.lidar.visualize()
+                        self.viewer.sync()
+
+                # Handle ROS callbacks
+                rclpy.spin_once(self, timeout_sec=0.0)
+        finally:
+            self.follow_camera.close()
 
     def _apply_joint_torque(self):
         # 当前关节状态

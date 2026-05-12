@@ -1,4 +1,5 @@
 import math
+import os
 import time
 import unittest
 
@@ -16,10 +17,14 @@ from rclpy.executors import SingleThreadedExecutor
 MIN_DISTANCE_M = 4.5
 TEST_TIMEOUT_SEC = 120.0
 MAX_ODOM_STEP_M = 1.0
+TEST_VIDEO_PATH = './lite3_rail_target_follow_distance.mp4'
 
 
 @pytest.mark.launch_test
 def generate_test_description():
+    if os.path.exists(TEST_VIDEO_PATH):
+        os.remove(TEST_VIDEO_PATH)
+
     launch_file = (
         get_package_share_directory('lite3_sdk_deploy')
         + '/launch/sim_rail_target_follow.launch.py'
@@ -44,6 +49,8 @@ def generate_test_description():
             'min_linear_x': '0.35',
             'max_linear_x': '0.45',
             'stale_timeout_sec': '0.75',
+            'enable_follow_camera': 'true',
+            'follow_camera_video_path': TEST_VIDEO_PATH,
         }.items(),
     )
 
@@ -105,3 +112,18 @@ class TestRailTargetFollowDistance(unittest.TestCase):
             node.destroy_subscription(subscription)
             node.destroy_node()
             rclpy.shutdown(context=context)
+
+
+@launch_testing.post_shutdown_test()
+class TestRailTargetFollowVideo(unittest.TestCase):
+
+    def test_follow_camera_video_created(self):
+        self.assertTrue(
+            os.path.exists(TEST_VIDEO_PATH),
+            msg=f"expected follow-camera video at {TEST_VIDEO_PATH}",
+        )
+        self.assertGreater(
+            os.path.getsize(TEST_VIDEO_PATH),
+            1024,
+            msg=f"follow-camera video at {TEST_VIDEO_PATH} is empty or too small",
+        )

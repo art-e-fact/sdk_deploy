@@ -1,3 +1,5 @@
+imageio
+imageio-ffmpeg
 mujoco
 scipy
 numpy
