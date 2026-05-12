@@ -1,8 +1,13 @@
+artefacts-toolkit
+imageio
+imageio-ffmpeg
 mujoco
 scipy
 numpy
 perlin-noise
 PyGLM
+pytest
+PyYAML
 empy==3.3.4
 catkin-pkg
 lark

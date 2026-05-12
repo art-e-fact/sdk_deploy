@@ -20,6 +20,8 @@ def launch_setup(context, *args, **kwargs):
     enable_heightmap = LaunchConfiguration('enable_heightmap')
     mid360_mount_pitch = LaunchConfiguration('mid360_mount_pitch')
     mid360_mount_offset_x = LaunchConfiguration('mid360_mount_offset_x')
+    enable_follow_camera = LaunchConfiguration('enable_follow_camera')
+    follow_camera_video_path = LaunchConfiguration('follow_camera_video_path')
 
     enable_mid360_value = enable_mid360.perform(context).lower() == 'true'
     enable_depth_value = enable_depth.perform(context).lower() == 'true'
@@ -67,6 +69,8 @@ def launch_setup(context, *args, **kwargs):
                 'enable_pointcloud': enable_pointcloud,
                 'mid360_mount_pitch': mid360_mount_pitch,
                 'mid360_mount_offset_x': mid360_mount_offset_x,
+                'enable_follow_camera': enable_follow_camera,
+                'follow_camera_video_path': follow_camera_video_path,
             }],
         ),
     ]
@@ -222,6 +226,16 @@ def generate_launch_description():
             'enable_heightmap',
             default_value='true',
             description='Launch the simple local heightmap, rail detector, and rail follower nodes',
+        ),
+        DeclareLaunchArgument(
+            'enable_follow_camera',
+            default_value='false',
+            description='Record an offscreen follow-camera video from the MuJoCo simulation',
+        ),
+        DeclareLaunchArgument(
+            'follow_camera_video_path',
+            default_value='/tmp/lite3_follow_camera.mp4',
+            description='Output path for the optional follow-camera video',
         ),
         DeclareLaunchArgument(
             'follow_distance',
