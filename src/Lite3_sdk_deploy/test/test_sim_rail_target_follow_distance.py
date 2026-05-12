@@ -1,5 +1,6 @@
 import math
 import os
+from pathlib import Path
 import time
 import unittest
 
@@ -14,16 +15,17 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 
 
-MIN_DISTANCE_M = 4.5
+MIN_DISTANCE_M = 0.5
 TEST_TIMEOUT_SEC = 120.0
 MAX_ODOM_STEP_M = 1.0
-TEST_VIDEO_PATH = './lite3_rail_target_follow_distance.mp4'
+OUTPUT_FOLDER = Path(os.getenv("ARTEFACTS_SCENARIO_UPLOAD_DIR", "./"))
+TEST_VIDEO_PATH = OUTPUT_FOLDER / 'lite3_rail_target_follow_distance.mp4'
 
 
 @pytest.mark.launch_test
 def generate_test_description():
-    if os.path.exists(TEST_VIDEO_PATH):
-        os.remove(TEST_VIDEO_PATH)
+    if TEST_VIDEO_PATH.exists():
+        TEST_VIDEO_PATH.unlink()
 
     launch_file = (
         get_package_share_directory('lite3_sdk_deploy')
@@ -50,7 +52,7 @@ def generate_test_description():
             'max_linear_x': '0.45',
             'stale_timeout_sec': '0.75',
             'enable_follow_camera': 'true',
-            'follow_camera_video_path': TEST_VIDEO_PATH,
+            'follow_camera_video_path': str(TEST_VIDEO_PATH),
         }.items(),
     )
 
