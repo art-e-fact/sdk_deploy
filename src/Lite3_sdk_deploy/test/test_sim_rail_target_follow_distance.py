@@ -15,8 +15,8 @@ import rclpy
 from rclpy.executors import SingleThreadedExecutor
 
 
-MIN_DISTANCE_M = 0.5
-TEST_TIMEOUT_SEC = 120.0
+MIN_DISTANCE_M = 4.5
+TEST_TIMEOUT_SEC = 60.0
 MAX_ODOM_STEP_M = 1.0
 OUTPUT_FOLDER = Path(os.getenv("ARTEFACTS_SCENARIO_UPLOAD_DIR", "./"))
 TEST_VIDEO_PATH = OUTPUT_FOLDER / 'lite3_rail_target_follow_distance.mp4'
@@ -74,14 +74,21 @@ class TestRailTargetFollowDistance(unittest.TestCase):
             'message_count': 0,
             'previous_xy': None,
             'last_xy': None,
+            'first_stamp_sec': None,
+            'last_stamp_sec': None,
         }
 
         def odom_callback(msg: Odometry):
             x = float(msg.pose.pose.position.x)
             y = float(msg.pose.pose.position.y)
             xy = (x, y)
+            stamp_sec = float(msg.header.stamp.sec) + float(msg.header.stamp.nanosec) * 1e-9
             state['message_count'] += 1
             state['last_xy'] = xy
+            # TODO: use /clock once we migrate to use simulation time 
+            state['last_stamp_sec'] = stamp_sec
+            if state['first_stamp_sec'] is None:
+                state['first_stamp_sec'] = stamp_sec
 
             previous_xy = state['previous_xy']
             state['previous_xy'] = xy
@@ -93,18 +100,25 @@ class TestRailTargetFollowDistance(unittest.TestCase):
                 state['distance_m'] += step_m
 
         subscription = node.create_subscription(Odometry, '/odom', odom_callback, 20)
-        deadline = time.monotonic() + TEST_TIMEOUT_SEC
+        wall_deadline = time.monotonic() + (5.0 * TEST_TIMEOUT_SEC)
 
         try:
-            while time.monotonic() < deadline and state['distance_m'] < MIN_DISTANCE_M:
+            while time.monotonic() < wall_deadline and state['distance_m'] < MIN_DISTANCE_M:
+                first_stamp_sec = state['first_stamp_sec']
+                last_stamp_sec = state['last_stamp_sec']
+                if first_stamp_sec is not None and last_stamp_sec is not None:
+                    if (last_stamp_sec - first_stamp_sec) >= TEST_TIMEOUT_SEC:
+                        break
                 rclpy.spin_once(node, executor=executor, timeout_sec=0.1)
 
-            elapsed_sec = TEST_TIMEOUT_SEC - max(0.0, deadline - time.monotonic())
+            elapsed_sec = 0.0
+            if state['first_stamp_sec'] is not None and state['last_stamp_sec'] is not None:
+                elapsed_sec = state['last_stamp_sec'] - state['first_stamp_sec']
             self.assertGreaterEqual(
                 state['distance_m'],
                 MIN_DISTANCE_M,
                 msg=(
-                    f"robot travelled {state['distance_m']:.3f} m in {elapsed_sec:.1f} s; "
+                    f"robot travelled {state['distance_m']:.3f} m in {elapsed_sec:.1f} sim s; "
                     f"expected at least {MIN_DISTANCE_M:.3f} m "
                     f"from {state['message_count']} odom messages, last_xy={state['last_xy']}"
                 ),
