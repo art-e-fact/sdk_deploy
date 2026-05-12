@@ -228,7 +228,7 @@ colcon build --packages-select lite3_sdk_deploy
 source install/setup.bash
 ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py \
   mode:=2 control_type:=0 \
-  xml:=src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/Lite3_yourscene.xml
+  xml:=Lite3_yourscene.xml
 ```
 
 ---

@@ -83,6 +83,7 @@ def launch_setup(context, *args, **kwargs):
     }
     mujoco_simulation_ros2_args = []
     if xml_path:
+        xml_path = f"src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/{xml_path}"
         mujoco_simulation_ros2_args = ["--xml", xml_path]
 
     if not effective_use_procedural_scene:
@@ -191,7 +192,7 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             'xml', default_value='',
-            description='Optional path to a top-level MuJoCo XML scene, forwarded as --xml.'
+            description='Top-level MuJoCo XML scene file name from src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf.'
         ),
 
         OpaqueFunction(function=launch_setup)
