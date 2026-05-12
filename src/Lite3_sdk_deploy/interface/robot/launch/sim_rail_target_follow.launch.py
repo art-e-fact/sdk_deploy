@@ -95,7 +95,7 @@ def launch_setup(context, *args, **kwargs):
         )
         actions.append(
             Node(
-                package='simple_local_heightmap',
+                package='rail_inspector',
                 executable='rail_detector_node',
                 name='rail_detector_node',
                 output='screen',
@@ -112,7 +112,7 @@ def launch_setup(context, *args, **kwargs):
         )
         actions.append(
             Node(
-                package='simple_local_heightmap',
+                package='rail_inspector',
                 executable='rail_target_follower_node',
                 name='rail_target_follower_node',
                 output='screen',
@@ -138,7 +138,7 @@ def launch_setup(context, *args, **kwargs):
         actions.append(
             LogInfo(
                 msg=(
-                    'simple_local_heightmap not started: enable_mid360:=true or '
+                    'rail heightmap pipeline not started: enable_mid360:=true or '
                     'enable_depth:=true enable_pointcloud:=true is required'
                 )
             )

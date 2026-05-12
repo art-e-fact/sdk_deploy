@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'simple_local_heightmap'
+package_name = 'rail_inspector'
 
 setup(
     name=package_name,
@@ -16,7 +16,7 @@ setup(
     zip_safe=True,
     maintainer='root',
     maintainer_email='azazdeaz@gmail.com',
-    description='TODO: Package description',
+    description='Rail detection and rail target following nodes.',
     license='TODO: License declaration',
     extras_require={
         'test': [
@@ -25,7 +25,9 @@ setup(
     },
     entry_points={
         'console_scripts': [
-            'local_heightmap_node = simple_local_heightmap.local_heightmap_node:main',
+            'rail_inspect_controller = rail_inspector.rail_inspect_controller:main',
+            'rail_detector_node = rail_inspector.rail_detector_node:main',
+            'rail_target_follower_node = rail_inspector.rail_target_follower_node:main',
         ],
     },
 )

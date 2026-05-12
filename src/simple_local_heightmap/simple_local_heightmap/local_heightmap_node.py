@@ -11,7 +11,7 @@ from std_msgs.msg import Float32MultiArray, Header, MultiArrayDimension
 from tf2_ros import Buffer, TransformException, TransformListener
 from visualization_msgs.msg import MarkerArray
 
-from simple_local_heightmap.rail_detector_visualization import build_base_markers
+from simple_local_heightmap.heightmap_visualization import build_base_markers
 
 
 class LocalHeightmapNode(Node):

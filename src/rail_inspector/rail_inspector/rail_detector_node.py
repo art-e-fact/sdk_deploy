@@ -9,7 +9,7 @@ from rclpy.node import Node
 from std_msgs.msg import Float32
 from visualization_msgs.msg import MarkerArray
 
-from simple_local_heightmap.rail_detector_visualization import build_markers
+from rail_inspector.rail_detector_visualization import build_markers
 
 
 class RailDetectorNode(Node):
@@ -207,7 +207,6 @@ class RailDetectorNode(Node):
             self.get_logger().warn('GridMap elevation data size does not match its layout', throttle_duration_sec=2.0)
             return None
 
-        # Undo the flip used by local_heightmap_node before publishing the GridMap layer.
         elevation = np.flip(flat.reshape(height, width), axis=(0, 1))
         resolution = float(msg.info.resolution)
         center = np.array([
@@ -562,7 +561,6 @@ class RailDetectorNode(Node):
         center = np.mean(xy, axis=0)
         tangent = np.asarray(forward, dtype=np.float32)
         if len(xy) >= 2:
-            # PCA gives the dominant local rail direction through the slice midpoints.
             _, _, vh = np.linalg.svd(xy - center[None, :], full_matrices=False)
             tangent = vh[0].astype(np.float32)
         if np.dot(tangent, forward) < 0.0:
