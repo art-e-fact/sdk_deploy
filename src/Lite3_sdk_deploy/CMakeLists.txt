@@ -143,4 +143,13 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}
 )
 
+if(BUILD_TESTING)
+  find_package(launch_testing_ament_cmake REQUIRED)
+
+  add_launch_test(
+    test/test_sim_rail_target_follow_distance.py
+    TIMEOUT 180
+  )
+endif()
+
 ament_package()
