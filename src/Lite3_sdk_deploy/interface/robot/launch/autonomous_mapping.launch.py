@@ -8,13 +8,14 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def launch_setup(context, *args, **kwargs):
-    use_procedural_scene = LaunchConfiguration("use_procedural_scene")
+    scene_type = LaunchConfiguration("scene_type")
     procedural_env_seed = LaunchConfiguration("procedural_env_seed")
     headless = LaunchConfiguration("headless")
     use_rviz = LaunchConfiguration("use_rviz")
     use_sim_time = LaunchConfiguration("use_sim_time")
     database_path = LaunchConfiguration("database_path")
     enable_pointcloud = LaunchConfiguration("enable_pointcloud")
+    enable_mid360 = LaunchConfiguration("enable_mid360")
 
     mode = int(LaunchConfiguration('mode').perform(context))
     localization = LaunchConfiguration('localization').perform(context)
@@ -60,10 +61,11 @@ def launch_setup(context, *args, **kwargs):
             executable="mujoco_simulation_ros2.py",
             output="screen",
             parameters=[{
-                "use_procedural_scene": use_procedural_scene,
+                "scene_type": scene_type,
                 "procedural_env_seed": procedural_env_seed,
                 "headless": headless,
                 "enable_lidar": enable_lidar,
+                "enable_mid360": enable_mid360,
                 "enable_depth": enable_depth,
                 "enable_color": enable_color,
                 "enable_pointcloud": enable_pointcloud,
@@ -113,7 +115,7 @@ def generate_launch_description():
 
     return LaunchDescription(
         [
-            DeclareLaunchArgument("use_procedural_scene", default_value="true"),
+            DeclareLaunchArgument("scene_type", default_value="shapes"),
             DeclareLaunchArgument("procedural_env_seed", default_value="-1"),
             DeclareLaunchArgument("headless", default_value="false"),
             DeclareLaunchArgument("use_rviz", default_value="true"),
@@ -128,6 +130,11 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 'enable_pointcloud', default_value='false',
                 description='Publish RealSense pointcloud (debug; off by default)'
+            ),
+
+            DeclareLaunchArgument(
+                'enable_mid360', default_value='false',
+                description='Publish Mid360 pointcloud (off by default)'
             ),
 
             DeclareLaunchArgument(

@@ -11,20 +11,26 @@
 
 import os
 import time
-import socket
-import struct
-import threading
 import argparse
+import math
 import random
 from pathlib import Path
+from typing import Callable
 from scipy.spatial.transform import Rotation
 import numpy as np
 import mujoco
 import mujoco.viewer
 
-from lidar_sensor import LidarSensor, LIDAR_FREQUENCY_HZ
-from depth_sensor import DepthSensor, DEPTH_FREQUENCY_HZ
-from procedural_scene_generator import build_procedural_spec
+from sensors.lidar_sensor import LidarSensor, LIDAR_FREQUENCY_HZ
+from sensors.depth_sensor import DepthSensor, DEPTH_FREQUENCY_HZ
+from sensors.mid360_lidar_sensor import (
+    MID360_DEFAULT_MOUNT_OFFSET_X_M,
+    MID360_DEFAULT_MOUNT_PITCH_DEG,
+    MID360_FREQUENCY_HZ,
+    Mid360LidarSensor,
+)
+from scenes.procedural_scene_generator import build_procedural_spec
+from scenes.procedural_railroad_scene import build_railroad_spec
 
 import rclpy
 from rclpy.node import Node
@@ -41,18 +47,27 @@ MODEL_NAME = "Lite3"
 # Get the directory of the current Python file
 CURRENT_DIR = Path(__file__).resolve().parent
 
-# Define the default XML path relative to the Python file
-XML_PATH = CURRENT_DIR / ".." / ".." / ".." / "Lite3_description" / "lite3_mjcf" / "mjcf" / "Lite3_stair.xml"
 
-# Convert to absolute path as string
-XML_PATH = str(XML_PATH.resolve())
+def _resolve_resource_path(*parts: str) -> str:
+    source_root = CURRENT_DIR / ".." / ".." / ".."
+    install_root = CURRENT_DIR / ".." / ".." / "share" / "lite3_sdk_deploy"
+    rel_path = Path(*parts)
+
+    for root in (source_root, install_root):
+        candidate = (root / rel_path).resolve()
+        if candidate.exists():
+            return str(candidate)
+
+    return str((source_root / rel_path).resolve())
+
+# Define the default XML path relative to the Python file
+XML_PATH = _resolve_resource_path("Lite3_description", "lite3_mjcf", "mjcf", "Lite3_stair.xml")
 
 # Robot-only MJCF used when the full scene is generated procedurally in Python.
-LITE3_ROBOT_XML_PATH = CURRENT_DIR / ".." / ".." / ".." / "Lite3_description" / "lite3_mjcf" / "mjcf" / "Lite3.xml"
-LITE3_ROBOT_XML_PATH = str(LITE3_ROBOT_XML_PATH.resolve())
+LITE3_ROBOT_XML_PATH = _resolve_resource_path("Lite3_description", "lite3_mjcf", "mjcf", "Lite3.xml")
 
-D435I_XML_PATH = CURRENT_DIR / ".." / ".." / ".." / "Lite3_description" / "lite3_mjcf" / "realsense_d435i" / "d435i.xml"
-D435I_XML_PATH = str(D435I_XML_PATH.resolve())
+D435I_XML_PATH = _resolve_resource_path("Lite3_description", "lite3_mjcf", "realsense_d435i", "d435i.xml")
+MID360_XML_PATH = _resolve_resource_path("Lite3_description", "lite3_mjcf", "mid360", "mid360.xml")
 
 
 USE_VIEWER = True
@@ -67,32 +82,51 @@ JOINT_INIT = {
 }
 
 
+SceneUpdater = Callable[[mujoco.MjModel, mujoco.MjData, float], bool]
+
+
 class MuJoCoSimulationNode(Node):
     def __init__(self,
                  model_key: str = MODEL_NAME,
                  xml_path: str = XML_PATH,
-                 d435i_xml_path: str = D435I_XML_PATH):
+                 d435i_xml_path: str = D435I_XML_PATH,
+                 mid360_xml_path: str = MID360_XML_PATH):
 
         super().__init__('mujoco_simulation')
 
-        self.declare_parameter('use_procedural_scene', False)
+        self.declare_parameter('scene_type', 'static')
         self.declare_parameter('procedural_env_seed', -1)
         self.declare_parameter('headless', False)
         self.declare_parameter('enable_lidar', False)
+        self.declare_parameter('enable_mid360', False)
         self.declare_parameter('enable_depth', False)
         self.declare_parameter('enable_color', False)
         self.declare_parameter('enable_pointcloud', False)
-        use_procedural_scene = bool(self.get_parameter('use_procedural_scene').value)
+        self.declare_parameter('mid360_mount_pitch', MID360_DEFAULT_MOUNT_PITCH_DEG)
+        self.declare_parameter('mid360_mount_offset_x', MID360_DEFAULT_MOUNT_OFFSET_X_M)
+        scene_type = str(self.get_parameter('scene_type').value).strip().lower()
         configured_seed = int(self.get_parameter('procedural_env_seed').value)
         headless = bool(self.get_parameter('headless').value)
         enable_lidar = bool(self.get_parameter('enable_lidar').value)
+        enable_mid360 = bool(self.get_parameter('enable_mid360').value)
         enable_depth = bool(self.get_parameter('enable_depth').value)
         enable_color = bool(self.get_parameter('enable_color').value)
         enable_pointcloud = bool(self.get_parameter('enable_pointcloud').value)
+        mid360_mount_pitch_deg = float(self.get_parameter('mid360_mount_pitch').value)
+        mid360_mount_offset_x = float(self.get_parameter('mid360_mount_offset_x').value)
         use_viewer = USE_VIEWER and (not headless)
+        self.scene_meta: dict = {}
+        self.scene_update: SceneUpdater | None = None
         self.procedural_waypoints_msg = None
+        self.scene_start_pose = (-5.0, 0.0, 0.0)
+        scene_meta: dict = {}
 
-        if use_procedural_scene:
+        if scene_type not in {"static", "shapes", "railroad"}:
+            raise ValueError(
+                f"Unsupported scene_type='{scene_type}'. Expected one of: static, shapes, railroad"
+            )
+
+        if scene_type == "shapes":
             if not os.path.isfile(LITE3_ROBOT_XML_PATH):
                 raise FileNotFoundError(f"Cannot find Lite3 robot MJCF: {LITE3_ROBOT_XML_PATH}")
             scene_seed = configured_seed if configured_seed >= 0 else random.randint(0, 2**31 - 1)
@@ -101,8 +135,9 @@ class MuJoCoSimulationNode(Node):
                 robot_start_xy=(-5.0, 0.0),
                 seed=scene_seed,
             )
+            self.scene_start_pose = tuple(scene_meta.get("robot_start_pose", self.scene_start_pose))
             self.get_logger().info(
-                f"[INFO] Procedural scene enabled (robot=Lite3.xml, world built in Python): "
+                f"[INFO] Shapes scene enabled (robot=Lite3.xml, world built in Python): "
                 f"seed={scene_meta['seed']}, nodes={scene_meta['nodes']}, "
                 f"edges={scene_meta['edges']}, obstacles={scene_meta['obstacles']}"
             )
@@ -111,11 +146,34 @@ class MuJoCoSimulationNode(Node):
                 self.get_logger().info(
                     f"[INFO] Publishing mission with {len(self.procedural_waypoints_msg.poses)} ordered waypoints on /procedural_waypoints"
                 )
+        elif scene_type == "railroad":
+            if not os.path.isfile(LITE3_ROBOT_XML_PATH):
+                raise FileNotFoundError(f"Cannot find Lite3 robot MJCF: {LITE3_ROBOT_XML_PATH}")
+            scene_seed = configured_seed if configured_seed >= 0 else random.randint(0, 2**31 - 1)
+            spec, scene_meta = build_railroad_spec(
+                LITE3_ROBOT_XML_PATH,
+                seed=scene_seed,
+                n_roads=1,
+                terrain=None,
+            )
+            self.scene_start_pose = tuple(scene_meta.get("robot_start_pose", self.scene_start_pose))
+            self.get_logger().info(
+                f"[INFO] Railroad scene enabled (robot=Lite3.xml, world built in Python): "
+                f"seed={scene_meta['seed']}, roads={scene_meta['roads']}, "
+                f"mainline_waypoints={len(scene_meta['mission_xy'])}"
+            )
+            self.procedural_waypoints_msg = self._build_waypoint_pose_array(scene_meta)
+            if self.procedural_waypoints_msg is not None:
+                self.get_logger().info(
+                    f"[INFO] Publishing main line mission with {len(self.procedural_waypoints_msg.poses)} ordered waypoints on /procedural_waypoints"
+                )
         else:
             if not os.path.isfile(xml_path):
                 raise FileNotFoundError(f"Cannot find MJCF: {xml_path}")
             spec = mujoco.MjSpec.from_file(xml_path)
             self.get_logger().info("[INFO] Using default static scene")
+
+        self._set_scene_meta(scene_meta)
 
         # Sensor-driven MjSpec mutations (must happen before compile)
         if enable_depth or enable_color:
@@ -125,10 +183,24 @@ class MuJoCoSimulationNode(Node):
             self.get_logger().info("[INFO] D435i model attached via mjSpec")
         if enable_lidar:
             LidarSensor.configure_spec(spec)
+        if enable_mid360:
+            if not os.path.isfile(mid360_xml_path):
+                raise FileNotFoundError(f"Mid360 XML not found: {mid360_xml_path}")
+            Mid360LidarSensor.configure_spec(
+                spec,
+                mid360_xml_path,
+                mount_pitch_deg=mid360_mount_pitch_deg,
+                mount_offset_x=mid360_mount_offset_x,
+            )
+            self.get_logger().info(
+                f"[INFO] Mid360 model attached via mjSpec "
+                f"(pitch={mid360_mount_pitch_deg:.2f} deg, offset_x={mid360_mount_offset_x:.4f} m)"
+            )
 
         self.model = spec.compile()
         self.model.opt.timestep = DT
         self.data = mujoco.MjData(self.model)
+        self.timestamp = 0.0
 
         # 机器人自由度列表
         self.actuator_ids = [a for a in range(self.model.nu)]  # 0..11
@@ -136,7 +208,8 @@ class MuJoCoSimulationNode(Node):
         assert self.dof_num == 12, "Expected 12 DOF for Lite3"
 
         # 初始化站立姿态
-        self._set_initial_pose(model_key)
+        self._set_initial_pose(model_key, self.scene_start_pose)
+        self._update_scene(self.timestamp)
 
         # 缓存
         self.kp_cmd = np.zeros((self.dof_num, 1), np.float32)
@@ -148,7 +221,6 @@ class MuJoCoSimulationNode(Node):
 
         # IMU
         self.last_base_linvel = np.zeros((3, 1), np.float64)
-        self.timestamp = 0.0
 
         self.get_logger().info(f"[INFO] MuJoCo model loaded, dof = {self.dof_num}")
 
@@ -181,7 +253,7 @@ class MuJoCoSimulationNode(Node):
         if use_viewer:
             self.viewer = mujoco.viewer.launch_passive(self.model, self.data)
             # Point viewer camera at the robot's initial position
-            self.viewer.cam.lookat[:] = [-5.0, 0.0, 0.3]
+            self.viewer.cam.lookat[:] = [self.scene_start_pose[0], self.scene_start_pose[1], 0.3]
             self.viewer.cam.distance = 3.0
             self.viewer.cam.azimuth = 90.0
             self.viewer.cam.elevation = -20.0
@@ -191,6 +263,9 @@ class MuJoCoSimulationNode(Node):
         # LiDAR sensor
         self.lidar = LidarSensor(self.model, self.data, self, self.viewer, enabled=enable_lidar)
         self.lidar_step_interval = int(1.0 / (LIDAR_FREQUENCY_HZ * DT))
+
+        self.mid360 = Mid360LidarSensor(self.model, self.data, self, self.viewer, enabled=enable_mid360)
+        self.mid360_step_interval = int(1.0 / (MID360_FREQUENCY_HZ * DT))
 
         # Depth camera sensor (RealSense D435i)
         self.depth = DepthSensor(
@@ -206,26 +281,57 @@ class MuJoCoSimulationNode(Node):
         self._publish_procedural_waypoints()
         self.waypoint_timer = self.create_timer(1.0, self._publish_procedural_waypoints)
 
-    def _set_initial_pose(self, key: str):
+    def _set_initial_pose(self, key: str, base_pose: tuple[float, float, float]):
         """关节位置设置为与 PyBullet 脚本一致的初始角度"""
+        x, y, yaw = base_pose
         qpos0 = self.data.qpos.copy()
         qpos0[7:7 + self.dof_num] = JOINT_INIT[key]  # ,3-6 basequat，0-2 basepos
-        qpos0[:3] = np.array([-5, 0, 0.43])
-        qpos0[3:7] = np.array([1, 0, 0, 0])
+        qpos0[:3] = np.array([x, y, 0.43])
+        qpos0[3:7] = np.array([math.cos(yaw / 2), 0, 0, math.sin(yaw / 2)])
         self.data.qpos[:] = qpos0
         mujoco.mj_forward(self.model, self.data)
+
+    def _set_scene_meta(self, scene_meta: dict | None):
+        self.scene_meta = scene_meta or {}
+        update_scene = self.scene_meta.get("update_scene")
+        if update_scene is None:
+            self.scene_update = None
+            return
+        if not callable(update_scene):
+            raise TypeError("scene_meta['update_scene'] must be callable")
+        self.scene_update = update_scene
+
+    def _update_scene(self, sim_time_s: float) -> bool:
+        if self.scene_update is None:
+            return False
+        changed = bool(self.scene_update(self.model, self.data, sim_time_s))
+        if changed:
+            mujoco.mj_forward(self.model, self.data)
+        return changed
 
     def _publish_static_transforms(self):
         """Collect static TFs from sensors and publish in one call."""
         stamp = self._make_sim_stamp()
         transforms = []
         transforms.extend(self.lidar.get_static_transforms(stamp))
+        transforms.extend(self.mid360.get_static_transforms(stamp))
         transforms.extend(self.depth.get_static_transforms(stamp))
         if transforms:
             self.static_tf_broadcaster.sendTransform(transforms)
 
-    def _make_sim_stamp(self):
-        return self.get_clock().now().to_msg()
+    @staticmethod
+    def _stamp_from_seconds(timestamp: float) -> Time:
+        stamp = Time()
+        sec = int(timestamp)
+        nanosec = int((timestamp - sec) * 1e9)
+        stamp.sec = sec
+        stamp.nanosec = nanosec
+        return stamp
+
+    def _make_sim_stamp(self, timestamp: float | None = None) -> Time:
+        if timestamp is None:
+            timestamp = self.timestamp
+        return self._stamp_from_seconds(timestamp)
 
     def _build_waypoint_pose_array(self, scene_meta: dict) -> PoseArray | None:
         mission_xy = scene_meta.get("mission_xy", [])
@@ -252,9 +358,7 @@ class MuJoCoSimulationNode(Node):
         self.procedural_waypoints_msg.header.stamp = self._make_sim_stamp()
         self.waypoint_pub.publish(self.procedural_waypoints_msg)
 
-    def _publish_odom_and_tf(self):
-        stamp = self._make_sim_stamp()
-
+    def _publish_odom_and_tf(self, stamp: Time, publish_odom: bool = True):
         pos = self.data.qpos[0:3]
         # MuJoCo quaternion is [w, x, y, z]
         quat_wxyz = self.data.qpos[3:7]
@@ -278,6 +382,9 @@ class MuJoCoSimulationNode(Node):
             z=float(quat_wxyz[3]), w=float(quat_wxyz[0])
         )
         self.tf_broadcaster.sendTransform(t)
+
+        if not publish_odom:
+            return
 
         # Odometry message
         odom_msg = Odometry()
@@ -332,19 +439,26 @@ class MuJoCoSimulationNode(Node):
                 mujoco.mj_step(self.model, self.data)
 
                 self.timestamp = step * DT
+                self._update_scene(self.timestamp)
+                stamp = self._make_sim_stamp(self.timestamp)
 
-                # 采样 & 发送观测 (every 5 steps for 200 Hz)
-                if step % 5 == 0:
-                    self._publish_robot_state(step)
-                    self._publish_odom_and_tf()
+                # Keep TF current for exact sensor timestamp lookups.
+                self._publish_odom_and_tf(stamp, publish_odom=False)
+
+                # 采样 & 发送观测
+                self._publish_robot_state(stamp)
+                self._publish_odom_and_tf(stamp)
 
                 # LiDAR scan
                 if step % self.lidar_step_interval == 0:
-                    self.lidar.update(self.timestamp)
+                    self.lidar.update(stamp)
+
+                if step % self.mid360_step_interval == 0:
+                    self.mid360.update(stamp)
 
                 # Depth camera
                 if step % self.depth_step_interval == 0:
-                    self.depth.update(self.timestamp)
+                    self.depth.update(stamp)
 
                 # Viewer
                 if self.viewer and step % RENDER_INTERVAL == 0:
@@ -393,11 +507,13 @@ class MuJoCoSimulationNode(Node):
 
     # --------------------------------------------------------
 
-    def _publish_robot_state(self, step: int):
+    def _publish_robot_state(self, stamp: Time):
         # ----- IMU -----
         # q_world = self.data.sensordata[:4]  # quaternion
         q_world = self.data.qpos[3:7]
         rpy = self.quaternion_to_euler(q_world)
+        # ImuDataValue expects degrees for roll/pitch/yaw
+        rpy_deg = np.rad2deg(rpy)
         # body_acc = self.data.sensordata[4:7]
         body_acc = self.data.sensordata[16:19]
         angvel_b = self.data.qvel[3:6]  # body frame
@@ -405,16 +521,11 @@ class MuJoCoSimulationNode(Node):
         imu_msg = ImuData()
         imu_msg.header = MetaType()
         imu_msg.header.frame_id = 0
-        stamp = Time()
-        sec = int(self.timestamp)
-        nanosec = int((self.timestamp - sec) * 1e9)
-        stamp.sec = sec
-        stamp.nanosec = nanosec
         imu_msg.header.stamp = stamp
         imu_msg.data = ImuDataValue()
-        imu_msg.data.roll = float(rpy[0])
-        imu_msg.data.pitch = float(rpy[1])
-        imu_msg.data.yaw = float(rpy[2])
+        imu_msg.data.roll = float(rpy_deg[0])
+        imu_msg.data.pitch = float(rpy_deg[1])
+        imu_msg.data.yaw = float(rpy_deg[2])
         imu_msg.data.omega_x = float(angvel_b[0])
         imu_msg.data.omega_y = float(angvel_b[1])
         imu_msg.data.omega_z = float(angvel_b[2])
@@ -435,11 +546,6 @@ class MuJoCoSimulationNode(Node):
         joints_msg = JointsData()
         joints_msg.header = MetaType()
         joints_msg.header.frame_id = 0
-        stamp = Time()
-        sec = int(self.timestamp)
-        nanosec = int((self.timestamp - sec) * 1e9)
-        stamp.sec = sec
-        stamp.nanosec = nanosec
         joints_msg.header.stamp = stamp
         joints_msg.data = JointsDataValue()
         # drdds 消息要求长度 16，这里补足 4 个占位

@@ -126,15 +126,20 @@ install(TARGETS rl_deploy
 # Install Python simulation scripts (runnable via: ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py)
 install(PROGRAMS
   interface/robot/simulation/mujoco_simulation_ros2.py
-  interface/robot/simulation/lidar_sensor.py
-  interface/robot/simulation/depth_sensor.py
-  interface/robot/simulation/auto_waypoint_navigator.py
+    interface/robot/simulation/auto_waypoint_navigator.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(DIRECTORY
+  interface/robot/simulation/scenes
+  interface/robot/simulation/sensors
   DESTINATION lib/${PROJECT_NAME}
 )
 
 install(DIRECTORY 
   config
   interface/robot/launch
+  Lite3_description
   DESTINATION share/${PROJECT_NAME}
 )
 

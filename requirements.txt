@@ -1,6 +1,8 @@
 mujoco
 scipy
 numpy
+perlin-noise
+PyGLM
 empy==3.3.4
 catkin-pkg
 lark

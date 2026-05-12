@@ -122,6 +122,36 @@ ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
 ros2 run lite3_sdk_deploy rl_deploy --twist
 ```
 
+### Autonomous Rail Target Following
+
+To launch the full railroad-following stack in one command (MuJoCo + local heightmap + rail detector + rail target follower + RL twist controller + RViz), use:
+
+```bash
+source install/setup.bash
+source venv/bin/activate
+ros2 launch lite3_sdk_deploy sim_rail_target_follow.launch.py
+```
+
+This launch file defaults to the railroad scene with Mid360 enabled, local heightmap enabled, and `procedural_env_seed:=123`.
+
+Useful tuning arguments:
+- `follow_distance`: stop distance to keep from the detected target. Default: `1.5`
+- `max_linear_x`: max forward speed. Default: `0.35`
+- `max_linear_y`: max lateral centering speed. Default: `0.2`
+- `max_angular_z`: max yaw-rate command. Default: `0.5`
+
+Example with custom follow distance and speed limits:
+
+```bash
+ros2 launch lite3_sdk_deploy sim_rail_target_follow.launch.py \
+  follow_distance:=2.0 \
+  max_linear_x:=0.25 \
+  max_linear_y:=0.15 \
+  max_angular_z:=0.4
+```
+
+The follower publishes to `/cmd_vel` and will stop if the rail line is invalid, the target is not detected, or the target is already within the configured follow distance.
+
 ### Manual Velocity Commands
 
 After the robot stands and enters RL mode (~5 seconds), send velocity commands:

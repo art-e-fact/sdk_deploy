@@ -51,6 +51,7 @@ def launch_setup(context, *args, **kwargs):
 
 
     enable_pointcloud = LaunchConfiguration('enable_pointcloud').perform(context).lower() == 'true'
+    enable_mid360 = LaunchConfiguration('enable_mid360').perform(context).lower() == 'true'
 
     rtabmap_args = {
         "use_sim_time": use_sim_time,
@@ -71,17 +72,21 @@ def launch_setup(context, *args, **kwargs):
     ## scene
     mujoco_simulation_ros2_params = {
         "enable_lidar": enable_lidar,
+        "enable_mid360": enable_mid360,
         "enable_depth": enable_depth,
         "enable_color": enable_color,
         "enable_pointcloud": enable_pointcloud,
     }
 
     if scene_id == 0:
-        mujoco_simulation_ros2_params["use_procedural_scene"] = False
+        mujoco_simulation_ros2_params["scene_type"] = "static"
         rtabmap_args["max_ground_height"] = '0.3'
         rtabmap_args["max_ground_angle"] = '60'
     elif scene_id == 1:
-        mujoco_simulation_ros2_params["use_procedural_scene"] = True
+        mujoco_simulation_ros2_params["scene_type"] = "shapes"
+        mujoco_simulation_ros2_params["procedural_env_seed"] = 1234
+    elif scene_id == 2:
+        mujoco_simulation_ros2_params["scene_type"] = "railroad"
         mujoco_simulation_ros2_params["procedural_env_seed"] = 1234
 
     return [
@@ -141,6 +146,11 @@ def generate_launch_description():
         ),
 
         DeclareLaunchArgument(
+            'enable_mid360', default_value='false',
+            description='Publish Mid360 pointcloud (off by default)'
+        ),
+
+        DeclareLaunchArgument(
             'localization', default_value='false',
             description='Launch in localization mode.'
         ),
@@ -170,7 +180,7 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             'scene_id', default_value='0',
-            description='Specify scene to launch: 0 (deeprobotics scene), 1 (procedural scene).'
+            description='Specify scene to launch: 0 (static), 1 (shapes), 2 (railroad).'
         ),
 
         OpaqueFunction(function=launch_setup)
