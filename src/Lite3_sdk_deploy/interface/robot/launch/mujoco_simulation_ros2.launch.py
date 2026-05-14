@@ -16,6 +16,10 @@ def launch_setup(context, *args, **kwargs):
     use_sim_time = LaunchConfiguration("use_sim_time")
     database_path = LaunchConfiguration("database_path")
     scene_id = int(LaunchConfiguration('scene_id').perform(context))
+    use_procedural_scene = LaunchConfiguration('use_procedural_scene').perform(context).lower() == 'true'
+    procedural_env_seed = LaunchConfiguration('procedural_env_seed')
+    xml_path = LaunchConfiguration('xml').perform(context).strip()
+    effective_use_procedural_scene = use_procedural_scene or scene_id == 1
 
     nav2_package_share = FindPackageShare("nav2_bringup").perform(context)
     lite3_package_share = FindPackageShare("lite3_sdk_deploy").perform(context)
@@ -74,15 +78,17 @@ def launch_setup(context, *args, **kwargs):
         "enable_depth": enable_depth,
         "enable_color": enable_color,
         "enable_pointcloud": enable_pointcloud,
+        "use_procedural_scene": effective_use_procedural_scene,
+        "procedural_env_seed": procedural_env_seed,
     }
+    mujoco_simulation_ros2_args = []
+    if xml_path:
+        xml_path = f"src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/{xml_path}"
+        mujoco_simulation_ros2_args = ["--xml", xml_path]
 
-    if scene_id == 0:
-        mujoco_simulation_ros2_params["use_procedural_scene"] = False
+    if not effective_use_procedural_scene:
         rtabmap_args["max_ground_height"] = '0.3'
         rtabmap_args["max_ground_angle"] = '60'
-    elif scene_id == 1:
-        mujoco_simulation_ros2_params["use_procedural_scene"] = True
-        mujoco_simulation_ros2_params["procedural_env_seed"] = 1234
 
     return [
         # MuJoCo simulation
@@ -90,6 +96,7 @@ def launch_setup(context, *args, **kwargs):
             package='lite3_sdk_deploy', 
             executable='mujoco_simulation_ros2.py',
             output='screen',
+            arguments=mujoco_simulation_ros2_args,
             parameters = [mujoco_simulation_ros2_params],
         ),
 
@@ -170,7 +177,22 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             'scene_id', default_value='0',
-            description='Specify scene to launch: 0 (deeprobotics scene), 1 (procedural scene).'
+            description='Legacy scene selector: 0 (authored/default scene), 1 (procedural scene).'
+        ),
+
+        DeclareLaunchArgument(
+            'use_procedural_scene', default_value='false',
+            description='Generate the MuJoCo environment procedurally at runtime.'
+        ),
+
+        DeclareLaunchArgument(
+            'procedural_env_seed', default_value='-1',
+            description='Seed for procedural scene generation; -1 selects a random seed.'
+        ),
+
+        DeclareLaunchArgument(
+            'xml', default_value='',
+            description='Top-level MuJoCo XML scene file name from src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf.'
         ),
 
         OpaqueFunction(function=launch_setup)

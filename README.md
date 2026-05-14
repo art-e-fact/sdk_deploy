@@ -69,18 +69,18 @@ In RViz2: Set **2D Goal Pose** to send a navigation goal
 
 ### Optional: Procedural Scene (MuJoCo)
 
-By default, simulation uses the authored static scene. To generate the environment procedurally at runtime, use:
+By default, simulation uses the authored static scene. To generate the environment procedurally at runtime with the full launch stack, use:
 
 ```bash
-ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py --ros-args -p use_procedural_scene:=true
+ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py \
+  mode:=2 control_type:=0 use_procedural_scene:=true
 ```
 
 Optional seed for reproducible layouts:
 
 ```bash
-ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py --ros-args \
-  -p use_procedural_scene:=true \
-  -p procedural_env_seed:=1234
+ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py \
+  mode:=2 control_type:=0 use_procedural_scene:=true procedural_env_seed:=1234
 ```
 
 Stand the robot with "z" then put into RL control mode with "c". Drive the robot around with keyboard controls (wasd) to build the map.
@@ -115,12 +115,10 @@ Notes:
 ### Run
 
 ```bash
-# Terminal 1 — MuJoCo simulation (publishes odom, TF, /scan)
-ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py
-
-# Terminal 2 — RL controller with twist input (auto stands up + enters RL mode after ~5s)
-ros2 run lite3_sdk_deploy rl_deploy --twist
+ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py mode:=2 control_type:=0
 ```
+
+This launches MuJoCo, the RL twist controller, Nav2, RTAB-Map, and RViz together. The controller automatically stands the robot up and enters RL mode after ~5 seconds.
 
 ### Manual Velocity Commands
 
@@ -228,8 +226,9 @@ Create a new `Lite3_<yourscene>.xml` in `src/Lite3_sdk_deploy/Lite3_description/
 ```bash
 colcon build --packages-select lite3_sdk_deploy
 source install/setup.bash
-ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py --xml \
-  src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/Lite3_yourscene.xml
+ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py \
+  mode:=2 control_type:=0 \
+  xml:=Lite3_yourscene.xml
 ```
 
 ---
