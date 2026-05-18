@@ -305,6 +305,7 @@ class MuJoCoSimulationNode(Node):
         odom_msg = Odometry()
         odom_msg.header.stamp = stamp
         odom_msg.header.frame_id = 'odom'
+        # odom_msg.child_frame_id = 'base_footprint' #'base_link'
         odom_msg.child_frame_id = 'base_link'
         odom_msg.pose.pose.position.x = float(pos[0])
         odom_msg.pose.pose.position.y = float(pos[1])
@@ -355,10 +356,9 @@ class MuJoCoSimulationNode(Node):
 
                 self.timestamp = step * DT
 
-                # 采样 & 发送观测 (every 5 steps for 200 Hz)
-                if step % 5 == 0:
-                    self._publish_robot_state(step)
-                    self._publish_odom_and_tf()
+                # 采样 & 发送观测
+                self._publish_robot_state(step)
+                self._publish_odom_and_tf()
 
                 # LiDAR scan
                 if step % self.lidar_step_interval == 0:
@@ -423,6 +423,8 @@ class MuJoCoSimulationNode(Node):
         # q_world = self.data.sensordata[:4]  # quaternion
         q_world = self.data.qpos[3:7]
         rpy = self.quaternion_to_euler(q_world)
+        # ImuDataValue expects degrees for roll/pitch/yaw
+        rpy_deg = np.rad2deg(rpy)
         # body_acc = self.data.sensordata[4:7]
         body_acc = self.data.sensordata[16:19]
         angvel_b = self.data.qvel[3:6]  # body frame
@@ -437,9 +439,9 @@ class MuJoCoSimulationNode(Node):
         stamp.nanosec = nanosec
         imu_msg.header.stamp = stamp
         imu_msg.data = ImuDataValue()
-        imu_msg.data.roll = float(rpy[0])
-        imu_msg.data.pitch = float(rpy[1])
-        imu_msg.data.yaw = float(rpy[2])
+        imu_msg.data.roll = float(rpy_deg[0])
+        imu_msg.data.pitch = float(rpy_deg[1])
+        imu_msg.data.yaw = float(rpy_deg[2])
         imu_msg.data.omega_x = float(angvel_b[0])
         imu_msg.data.omega_y = float(angvel_b[1])
         imu_msg.data.omega_z = float(angvel_b[2])
