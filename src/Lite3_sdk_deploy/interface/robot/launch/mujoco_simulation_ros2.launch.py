@@ -21,14 +21,13 @@ def launch_setup(context, *args, **kwargs):
     use_procedural_scene = LaunchConfiguration('use_procedural_scene').perform(context).lower() == 'true'
     procedural_env_seed = LaunchConfiguration('procedural_env_seed')
     xml_filename = LaunchConfiguration('xml').perform(context).strip()
+    # Custom XML files are authored/static scenes loaded directly by MuJoCo.
     scene_type = "static"
-    if xml_filename:
-        # Custom XML files are authored/static scenes loaded directly by MuJoCo.
-        scene_type = "static"
-    elif scene_id == 2:
-        scene_type = "railroad"
-    elif use_procedural_scene or scene_id == 1:
-        scene_type = "shapes"
+    if not xml_filename:
+        if scene_id == 2:
+            scene_type = "railroad"
+        elif use_procedural_scene or scene_id == 1:
+            scene_type = "shapes"
 
     nav2_package_share = FindPackageShare("nav2_bringup").perform(context)
     lite3_package_share = FindPackageShare("lite3_sdk_deploy").perform(context)
