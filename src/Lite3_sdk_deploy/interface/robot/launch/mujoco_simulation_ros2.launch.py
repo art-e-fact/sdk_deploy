@@ -1,3 +1,5 @@
+import os
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction, IncludeLaunchDescription
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
@@ -19,7 +21,9 @@ def launch_setup(context, *args, **kwargs):
     use_procedural_scene = LaunchConfiguration('use_procedural_scene').perform(context).lower() == 'true'
     procedural_env_seed = LaunchConfiguration('procedural_env_seed')
     xml_path = LaunchConfiguration('xml').perform(context).strip()
-    if scene_id == 2:
+    if xml_path:
+        scene_type = "static"
+    elif scene_id == 2:
         scene_type = "railroad"
     elif use_procedural_scene or scene_id == 1:
         scene_type = "shapes"
@@ -90,7 +94,13 @@ def launch_setup(context, *args, **kwargs):
     }
     mujoco_simulation_ros2_args = []
     if xml_path:
-        xml_path = f"src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/{xml_path}"
+        xml_path = os.path.join(
+            lite3_package_share,
+            "Lite3_description",
+            "lite3_mjcf",
+            "mjcf",
+            xml_path,
+        )
         mujoco_simulation_ros2_args = ["--xml", xml_path]
 
     if scene_type == "static":
