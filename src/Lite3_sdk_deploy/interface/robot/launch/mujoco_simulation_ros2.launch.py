@@ -22,11 +22,13 @@ def launch_setup(context, *args, **kwargs):
     procedural_env_seed = LaunchConfiguration('procedural_env_seed')
     xml_filename = LaunchConfiguration('xml').perform(context).strip()
     scene_type = "static"
-    if not xml_filename:
-        if scene_id == 2:
-            scene_type = "railroad"
-        elif use_procedural_scene or scene_id == 1:
-            scene_type = "shapes"
+    if xml_filename:
+        # Custom XML files are authored/static scenes loaded directly by MuJoCo.
+        scene_type = "static"
+    elif scene_id == 2:
+        scene_type = "railroad"
+    elif use_procedural_scene or scene_id == 1:
+        scene_type = "shapes"
 
     nav2_package_share = FindPackageShare("nav2_bringup").perform(context)
     lite3_package_share = FindPackageShare("lite3_sdk_deploy").perform(context)
@@ -99,7 +101,12 @@ def launch_setup(context, *args, **kwargs):
             / "mjcf"
         ).resolve()
         xml_path = (mjcf_root / xml_filename).resolve()
-        xml_path.relative_to(mjcf_root)
+        try:
+            xml_path.relative_to(mjcf_root)
+        except ValueError as exc:
+            raise ValueError(
+                f"xml must stay within {mjcf_root}; got {xml_filename!r}"
+            ) from exc
         mujoco_simulation_ros2_args = ["--xml", str(xml_path)]
 
     if scene_type == "static":
