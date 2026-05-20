@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, OpaqueFunction, IncludeLaunchDescription
@@ -20,12 +20,13 @@ def launch_setup(context, *args, **kwargs):
     scene_id = int(LaunchConfiguration('scene_id').perform(context))
     use_procedural_scene = LaunchConfiguration('use_procedural_scene').perform(context).lower() == 'true'
     procedural_env_seed = LaunchConfiguration('procedural_env_seed')
-    xml_path = LaunchConfiguration('xml').perform(context).strip()
+    xml_filename = LaunchConfiguration('xml').perform(context).strip()
     scene_type = "static"
-    if not xml_path and scene_id == 2:
-        scene_type = "railroad"
-    elif not xml_path and (use_procedural_scene or scene_id == 1):
-        scene_type = "shapes"
+    if not xml_filename:
+        if scene_id == 2:
+            scene_type = "railroad"
+        elif use_procedural_scene or scene_id == 1:
+            scene_type = "shapes"
 
     nav2_package_share = FindPackageShare("nav2_bringup").perform(context)
     lite3_package_share = FindPackageShare("lite3_sdk_deploy").perform(context)
@@ -90,15 +91,16 @@ def launch_setup(context, *args, **kwargs):
         "procedural_env_seed": procedural_env_seed,
     }
     mujoco_simulation_ros2_args = []
-    if xml_path:
-        xml_path = os.path.join(
-            lite3_package_share,
-            "Lite3_description",
-            "lite3_mjcf",
-            "mjcf",
-            xml_path,
-        )
-        mujoco_simulation_ros2_args = ["--xml", xml_path]
+    if xml_filename:
+        mjcf_root = (
+            Path(lite3_package_share)
+            / "Lite3_description"
+            / "lite3_mjcf"
+            / "mjcf"
+        ).resolve()
+        xml_path = (mjcf_root / xml_filename).resolve()
+        xml_path.relative_to(mjcf_root)
+        mujoco_simulation_ros2_args = ["--xml", str(xml_path)]
 
     if scene_type == "static":
         rtabmap_args["max_ground_height"] = '0.3'
@@ -196,7 +198,7 @@ def generate_launch_description():
 
         DeclareLaunchArgument(
             'scene_id', default_value='0',
-            description='Legacy scene selector: 0 (static/authored XML), 1 (procedural shapes), 2 (procedural railroad).'
+            description='Legacy scene selector: 0 (static scene), 1 (procedural shapes), 2 (procedural railroad).'
         ),
 
         DeclareLaunchArgument(
