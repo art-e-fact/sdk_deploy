@@ -21,14 +21,11 @@ def launch_setup(context, *args, **kwargs):
     use_procedural_scene = LaunchConfiguration('use_procedural_scene').perform(context).lower() == 'true'
     procedural_env_seed = LaunchConfiguration('procedural_env_seed')
     xml_path = LaunchConfiguration('xml').perform(context).strip()
-    if xml_path:
-        scene_type = "static"
-    elif scene_id == 2:
+    scene_type = "static"
+    if not xml_path and scene_id == 2:
         scene_type = "railroad"
-    elif use_procedural_scene or scene_id == 1:
+    elif not xml_path and (use_procedural_scene or scene_id == 1):
         scene_type = "shapes"
-    else:
-        scene_type = "static"
 
     nav2_package_share = FindPackageShare("nav2_bringup").perform(context)
     lite3_package_share = FindPackageShare("lite3_sdk_deploy").perform(context)
