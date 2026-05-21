@@ -14,6 +14,8 @@
 > ```
 > Run this on the host (outside the container) each new login/session.
 
+> **NVIDIA/Newton viewer note:** The devcontainer requests `--gpus=all`, NVIDIA graphics driver capabilities, GLX, and unlimited `memlock` for Warp/Newton viewer support. The host must have the NVIDIA driver and NVIDIA Container Toolkit installed, and the container must be rebuilt after changes to `.devcontainer/`. On the host, `docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi` should work before opening the devcontainer.
+
 
 ### System dependencies:
   ```bash
@@ -119,6 +121,27 @@ ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py mode:=2 control_ty
 ```
 
 This launches MuJoCo, the RL twist controller, Nav2, RTAB-Map, and RViz together. The controller automatically stands the robot up and enters RL mode after ~5 seconds.
+
+### Newton Flat-Terrain Simulation
+
+Newton support is available as a minimal robot-only simulation path. It loads the Lite3 USD description, adds a flat ground plane, runs the existing `rl_deploy` controller, subscribes to `/JOINTS_CMD`, and publishes `/JOINTS_DATA`, `/IMU_DATA`, and `/odom`. Sensors, procedural scenes, RTAB-Map, Nav2, and waypoint navigation are not launched in this mode.
+
+```bash
+ros2 launch lite3_sdk_deploy newton_simulation_ros2.launch.py control_type:=0 headless:=true
+```
+
+To show the Newton viewer, set `headless:=false`:
+
+```bash
+ros2 launch lite3_sdk_deploy newton_simulation_ros2.launch.py control_type:=0 headless:=false
+```
+
+To use a different USD file:
+
+```bash
+ros2 launch lite3_sdk_deploy newton_simulation_ros2.launch.py \
+  control_type:=0 headless:=true usd:=/absolute/path/to/Lite3.usd
+```
 
 ### Manual Velocity Commands
 
