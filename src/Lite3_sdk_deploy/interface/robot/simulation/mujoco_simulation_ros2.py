@@ -22,9 +22,9 @@ import numpy as np
 import mujoco
 import mujoco.viewer
 
-from sensors.lidar_sensor import LidarSensor, LIDAR_FREQUENCY_HZ
-from sensors.depth_sensor import DepthSensor, DEPTH_FREQUENCY_HZ
-from sensors.mid360_lidar_sensor import Mid360LidarSensor, MID360_FREQUENCY_HZ
+from sensors.mujoco.lidar_sensor import LidarSensor, LIDAR_FREQUENCY_HZ
+from sensors.mujoco.depth_sensor import DepthSensor, DEPTH_FREQUENCY_HZ
+from sensors.mujoco.mid360_lidar_sensor import Mid360LidarSensor, MID360_FREQUENCY_HZ
 from procedural_scene_generator import build_procedural_spec
 
 import rclpy
@@ -61,9 +61,6 @@ XML_PATH = _resolve_resource_path("Lite3_description", "lite3_mjcf", "mjcf", "Li
 # Robot-only MJCF used when the full scene is generated procedurally in Python.
 LITE3_ROBOT_XML_PATH = _resolve_resource_path("Lite3_description", "lite3_mjcf", "mjcf", "Lite3.xml")
 
-D435I_XML_PATH = _resolve_resource_path("Lite3_description", "lite3_mjcf", "realsense_d435i", "d435i.xml")
-MID360_XML_PATH = _resolve_resource_path("Lite3_description", "lite3_mjcf", "mid360", "mid360.xml")
-
 
 USE_VIEWER = True
 DT = 0.001
@@ -80,9 +77,7 @@ JOINT_INIT = {
 class MuJoCoSimulationNode(Node):
     def __init__(self,
                  model_key: str = MODEL_NAME,
-                 xml_path: str = XML_PATH,
-                 d435i_xml_path: str = D435I_XML_PATH,
-                 mid360_xml_path: str = MID360_XML_PATH):
+                 xml_path: str = XML_PATH):
 
         super().__init__('mujoco_simulation')
 
@@ -132,16 +127,12 @@ class MuJoCoSimulationNode(Node):
 
         # Sensor-driven MjSpec mutations (must happen before compile)
         if enable_depth or enable_color:
-            if not os.path.isfile(d435i_xml_path):
-                raise FileNotFoundError(f"D435i XML not found: {d435i_xml_path}")
-            DepthSensor.configure_spec(spec, d435i_xml_path)
+            DepthSensor.init_visuals(spec)
             self.get_logger().info("[INFO] D435i model attached via mjSpec")
         if enable_lidar:
-            LidarSensor.configure_spec(spec)
+            LidarSensor.init_visuals(spec)
         if enable_mid360:
-            if not os.path.isfile(mid360_xml_path):
-                raise FileNotFoundError(f"Mid360 XML not found: {mid360_xml_path}")
-            Mid360LidarSensor.configure_spec(spec, mid360_xml_path)
+            Mid360LidarSensor.init_visuals(spec)
             self.get_logger().info("[INFO] Mid360 model attached via mjSpec")
 
         self.model = spec.compile()

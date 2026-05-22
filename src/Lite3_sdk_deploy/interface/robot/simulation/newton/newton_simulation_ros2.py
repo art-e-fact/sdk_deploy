@@ -8,15 +8,19 @@ from pathlib import Path
 CURRENT_DIR = Path(__file__).resolve().parent
 if str(CURRENT_DIR) not in sys.path:
     sys.path.insert(0, str(CURRENT_DIR))
+SIMULATION_DIR = CURRENT_DIR.parent
+if str(SIMULATION_DIR) not in sys.path:
+    sys.path.insert(0, str(SIMULATION_DIR))
 
 import rclpy
 
 from ros_bridge import NewtonRosBridge
 from simulation import DT, ODOM_EVERY_STEPS, PUBLISH_EVERY_STEPS, ROS_SPIN_EVERY_STEPS, NewtonSimulation, create_newton_viewer, default_mjcf_path
+from sensors.newton.sensor_manager import NewtonSensorManager
 
 RENDER_EVERY_STEPS = 50
 
-def run_loop(sim: NewtonSimulation, ros: NewtonRosBridge):
+def run_loop(sim: NewtonSimulation, ros: NewtonRosBridge, sensors: NewtonSensorManager | None = None):
     next_step_time = time.perf_counter()
     while rclpy.ok() and not ros.should_exit():
         sleep_time = next_step_time - time.perf_counter()
@@ -30,6 +34,9 @@ def run_loop(sim: NewtonSimulation, ros: NewtonRosBridge):
             ros.spin_once()
         sim.set_command(ros.read_latest_action())
         sim.step()
+
+        if sensors is not None:
+            sensors.update(sim.state_0, sim.step_count, sim.timestamp)
 
         state = None
         if sim.step_count % PUBLISH_EVERY_STEPS == 0:
@@ -55,10 +62,18 @@ def main():
     viewer = None if args.headless else create_newton_viewer()
     model_path = args.usd if args.usd is not None else args.mjcf
     ros = NewtonRosBridge(headless=args.headless, model_path=model_path)
-    sim = NewtonSimulation(model_path=model_path, headless=args.headless, viewer=viewer, logger=ros.get_logger())
+    sensor_options = ros.sensor_options()
+    sim = NewtonSimulation(
+        model_path=model_path,
+        headless=args.headless,
+        viewer=viewer,
+        logger=ros.get_logger(),
+        sensor_options=sensor_options,
+    )
+    sensors = NewtonSensorManager(sim.model, sim.state_0, ros.node, DT, sensor_options)
 
     try:
-        run_loop(sim, ros)
+        run_loop(sim, ros, sensors)
     finally:
         ros.destroy()
         if rclpy.ok():

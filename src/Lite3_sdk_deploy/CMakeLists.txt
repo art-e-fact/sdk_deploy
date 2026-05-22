@@ -127,8 +127,6 @@ install(TARGETS rl_deploy
 install(PROGRAMS
   interface/robot/simulation/mujoco_simulation_ros2.py
   interface/robot/simulation/newton_simulation_ros2.py
-  interface/robot/simulation/lidar_sensor.py
-  interface/robot/simulation/depth_sensor.py
   interface/robot/simulation/auto_waypoint_navigator.py
   DESTINATION lib/${PROJECT_NAME}
 )
@@ -139,9 +137,12 @@ install(FILES
 )
 
 install(DIRECTORY
+  interface/robot/simulation/sensors
   interface/robot/simulation/newton
   DESTINATION lib/${PROJECT_NAME}
-  FILES_MATCHING PATTERN "*.py"
+  FILES_MATCHING
+    PATTERN "*.py"
+    PATTERN "*.npy"
 )
 
 install(DIRECTORY 

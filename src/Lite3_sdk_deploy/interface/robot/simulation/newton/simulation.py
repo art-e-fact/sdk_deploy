@@ -11,6 +11,10 @@ import warp as wp
 from ament_index_python.packages import get_package_share_directory
 from newton import JointTargetMode
 
+from sensors.newton.depth_sensor import NewtonDepthSensor
+from sensors.newton.lidar_sensor import NewtonLidarSensor
+from sensors.newton.mid360_lidar_sensor import NewtonMid360LidarSensor
+
 
 NUM_DOFS = 12
 BASE_DOF_COUNT = 6
@@ -115,11 +119,12 @@ def warp_to_numpy(array, fallback_size: int) -> np.ndarray:
 
 
 class NewtonSimulation:
-    def __init__(self, model_path: str, headless: bool = True, viewer=None, logger=None):
+    def __init__(self, model_path: str, headless: bool = True, viewer=None, logger=None, sensor_options=None):
         self.model_path = model_path
         self.headless = headless
         self.viewer = None if headless else viewer
         self.logger = logger
+        self.sensor_options = sensor_options
         self.device = wp.get_device()
         self.timestamp = 0.0
         self.step_count = 0
@@ -145,7 +150,7 @@ class NewtonSimulation:
         self._log_info(f"Newton Lite3 simulation loaded: {self.model_path}")
         if self.viewer is not None:
             self._log_info("Newton viewer enabled because headless is false.")
-        self._log_info("Newton mode is flat terrain only; sensors and procedural scenes are not launched.")
+        self._log_info("Newton mode is flat terrain only; optional sensors are managed by the ROS runner.")
 
     def set_command(self, command: JointCommand):
         self.kp_cmd[:] = command.kp
@@ -246,6 +251,8 @@ class NewtonSimulation:
                 joint_ordering="dfs",
                 hide_collision_shapes=True,
             )
+
+        self._init_sensor_visuals(builder)
         builder.approximate_meshes("convex_hull")
         builder.add_ground_plane()
 
@@ -269,6 +276,18 @@ class NewtonSimulation:
         newton.eval_fk(model, state_0.joint_q, state_0.joint_qd, state_0)
         newton.eval_fk(model, state_1.joint_q, state_1.joint_qd, state_1)
         return model, solver, state_0, state_1, control
+
+    def _init_sensor_visuals(self, builder):
+        options = self.sensor_options
+        if options is None:
+            return
+
+        if getattr(options, "enable_lidar", False):
+            NewtonLidarSensor.init_visuals(builder)
+        if getattr(options, "enable_depth", False) or getattr(options, "enable_color", False):
+            NewtonDepthSensor.init_visuals(builder)
+        if getattr(options, "enable_mid360", False):
+            NewtonMid360LidarSensor.init_visuals(builder)
 
     def _simulate_physics_step(self, apply_viewer_forces: bool, keep_state_buffers: bool):
         self.state_0.clear_forces()
