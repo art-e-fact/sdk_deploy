@@ -254,6 +254,12 @@ Update every `class="visual"` / `class="collision"` reference in the file to mat
 
 Scene XMLs are now environment-only. Do not include `Lite3.xml` in the scene file; the simulator loads the robot separately from `robot_description`. Update or create a simulation YAML that sets `scene` to your custom scene XML path.
 
+Example `my_scene_simulation.yaml`:
+```yaml
+simulator: mujoco
+scene: package://lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/stairs_floors.xml
+```
+
 **Step 4 – Build and run**
 
 ```bash
@@ -282,8 +288,7 @@ scene: your_scene.xml
 
 - Launch:
 ```
-ros2 launch lite3_sdk_deploy mujoco_simulation_ros2_dddrm.launch.py \
-  mode:=0 simulation_config:=/absolute/path/to/mid360_stairs.yaml
+ros2 launch lite3_sdk_deploy mujoco_simulation_ros2_dddrm.launch.py mode:=0
 ```
 
 - (From another terminal) Save local map file:
@@ -305,8 +310,7 @@ sub_maps:
 ```
 - Launch:
 ```
-ros2 launch lite3_sdk_deploy mujoco_simulation_ros2_dddrm.launch.py \
-  mode:=1 simulation_config:=/absolute/path/to/mid360_stairs.yaml
+ros2 launch lite3_sdk_deploy mujoco_simulation_ros2_dddrm.launch.py mode:=1
 ```
 - In Rviz, click on "3D pose estimate" -> set initial pose, then click on "3D goal pose" -> set target goal for navigation
 
