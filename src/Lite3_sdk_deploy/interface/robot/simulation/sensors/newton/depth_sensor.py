@@ -44,6 +44,7 @@ from sensors.newton.geometry import (
     site_local_pose,
     site_world_pose,
 )
+from simulation_config import RealsenseConfig
 
 D435I_FORWARD_OFFSET_VEC = np.array(D435I_FORWARD_OFFSET, dtype=np.float64)
 D435I_VISUAL_QUAT_XYZW = (0.5, 0.5, 0.5, 0.5)
@@ -60,13 +61,14 @@ D435I_VISUAL_MESHES = (
 )
 
 
-def _vertical_fov_from_fy(fy: float) -> float:
-    return float(2.0 * np.arctan((HEIGHT * 0.5) / fy))
+def _vertical_fov_from_fy(fy: float, height: int) -> float:
+    return float(2.0 * np.arctan((height * 0.5) / fy))
 
 
 class NewtonDepthSensor:
     @staticmethod
-    def init_visuals(builder):
+    def init_visuals(builder, config: RealsenseConfig | None = None):
+        config = config or RealsenseConfig()
         if not D435I_XML_PATH.is_file():
             raise FileNotFoundError(f"D435i XML not found: {D435I_XML_PATH}")
 
@@ -76,9 +78,9 @@ class NewtonDepthSensor:
             raise ImportError("Newton D435i visuals require trimesh to load OBJ meshes") from exc
 
         torso_body = find_builder_body_index(builder, "TORSO")
-        mount_shape = find_builder_shape_index(builder, D435I_MOUNT_SITE_NAME)
+        mount_shape = find_builder_shape_index(builder, config.mount_site_name)
         mount_pos, mount_rot = builder_shape_local_pose(builder, mount_shape)
-        mount_pos = mount_pos + mount_rot @ D435I_FORWARD_OFFSET_VEC
+        mount_pos = mount_pos + mount_rot @ np.array(config.forward_offset, dtype=np.float64)
         visual_rot = mount_rot @ R_scipy.from_quat(D435I_VISUAL_QUAT_XYZW).as_matrix()
         visual_xform = wp.transform(mount_pos, quat_from_matrix(visual_rot))
 
@@ -110,7 +112,15 @@ class NewtonDepthSensor:
                 label=f"d435i_visual_{index}",
             )
 
-    def __init__(self, model, node, enable_depth=False, enable_color=False, enable_pointcloud=False):
+    def __init__(self, model, node, enable_depth=False, enable_color=False, enable_pointcloud=False, config: RealsenseConfig | None = None):
+        self.config = config or RealsenseConfig(
+            enable_depth=enable_depth,
+            enable_color=enable_color,
+            enable_pointcloud=enable_pointcloud,
+        )
+        enable_depth = self.config.enable_depth
+        enable_color = self.config.enable_color
+        enable_pointcloud = self.config.enable_pointcloud
         if enable_pointcloud and not enable_depth:
             raise ValueError("enable_pointcloud requires enable_depth")
 
@@ -126,34 +136,54 @@ class NewtonDepthSensor:
             node.get_logger().info("[INFO] Newton D435i disabled")
             return
 
-        self.site_index = find_site_index(model, D435I_MOUNT_SITE_NAME)
+        self.site_index = find_site_index(model, self.config.mount_site_name)
         self.sensor = SensorTiledCamera(model, load_textures=enable_color)
         if enable_color:
             # Color rendering needs scene lighting; depth does not.
             self.sensor.utils.create_default_light(enable_shadows=True)
-        self.depth_rays = self.sensor.utils.compute_pinhole_camera_rays(WIDTH, HEIGHT, _vertical_fov_from_fy(DEPTH_FY))
-        self.color_rays = self.sensor.utils.compute_pinhole_camera_rays(WIDTH, HEIGHT, _vertical_fov_from_fy(COLOR_FY))
-        self.depth_image = self.sensor.utils.create_depth_image_output(WIDTH, HEIGHT)
-        self.forward_depth_image = self.sensor.utils.create_depth_image_output(WIDTH, HEIGHT)
-        self.color_image = self.sensor.utils.create_color_image_output(WIDTH, HEIGHT)
+        self.depth_rays = self.sensor.utils.compute_pinhole_camera_rays(
+            self.config.width, self.config.height, _vertical_fov_from_fy(self.config.depth_fy, self.config.height)
+        )
+        self.color_rays = self.sensor.utils.compute_pinhole_camera_rays(
+            self.config.width, self.config.height, _vertical_fov_from_fy(self.config.color_fy, self.config.height)
+        )
+        self.depth_image = self.sensor.utils.create_depth_image_output(self.config.width, self.config.height)
+        self.forward_depth_image = self.sensor.utils.create_depth_image_output(self.config.width, self.config.height)
+        self.color_image = self.sensor.utils.create_color_image_output(self.config.width, self.config.height)
 
-        self._depth_info = make_camera_info(DEPTH_FX, DEPTH_FY, DEPTH_CX, DEPTH_CY, WIDTH, HEIGHT, DEPTH_OPTICAL_FRAME)
-        self._color_info = make_camera_info(COLOR_FX, COLOR_FY, COLOR_CX, COLOR_CY, WIDTH, HEIGHT, COLOR_OPTICAL_FRAME)
+        self._depth_info = make_camera_info(
+            self.config.depth_fx,
+            self.config.depth_fy,
+            self.config.depth_cx,
+            self.config.depth_cy,
+            self.config.width,
+            self.config.height,
+            self.config.depth_optical_frame,
+        )
+        self._color_info = make_camera_info(
+            self.config.color_fx,
+            self.config.color_fy,
+            self.config.color_cx,
+            self.config.color_cy,
+            self.config.width,
+            self.config.height,
+            self.config.color_optical_frame,
+        )
 
-        pixel_x = np.arange(WIDTH, dtype=np.float32)
-        pixel_y = np.arange(HEIGHT, dtype=np.float32)
+        pixel_x = np.arange(self.config.width, dtype=np.float32)
+        pixel_y = np.arange(self.config.height, dtype=np.float32)
         self._u_grid, self._v_grid = np.meshgrid(pixel_x, pixel_y)
-        self._x_factor = (self._u_grid - DEPTH_CX) / DEPTH_FX
-        self._y_factor = (self._v_grid - DEPTH_CY) / DEPTH_FY
+        self._x_factor = (self._u_grid - self.config.depth_cx) / self.config.depth_fx
+        self._y_factor = (self._v_grid - self.config.depth_cy) / self.config.depth_fy
 
         if enable_depth:
-            self.depth_image_pub = node.create_publisher(Image, DEPTH_IMAGE_TOPIC, 10)
-            self.depth_info_pub = node.create_publisher(type(self._depth_info), DEPTH_INFO_TOPIC, 10)
+            self.depth_image_pub = node.create_publisher(Image, self.config.depth_image_topic, 10)
+            self.depth_info_pub = node.create_publisher(type(self._depth_info), self.config.depth_info_topic, 10)
         if enable_color:
-            self.color_image_pub = node.create_publisher(Image, COLOR_IMAGE_TOPIC, 10)
-            self.color_info_pub = node.create_publisher(type(self._color_info), COLOR_INFO_TOPIC, 10)
+            self.color_image_pub = node.create_publisher(Image, self.config.color_image_topic, 10)
+            self.color_info_pub = node.create_publisher(type(self._color_info), self.config.color_info_topic, 10)
         if enable_pointcloud:
-            self.pointcloud_pub = node.create_publisher(PointCloud2, POINTCLOUD_TOPIC, 10)
+            self.pointcloud_pub = node.create_publisher(PointCloud2, self.config.pointcloud_topic, 10)
 
         enabled = [name for name, active in (("depth", enable_depth), ("color", enable_color), ("pointcloud", enable_pointcloud)) if active]
         node.get_logger().info(f"[INFO] Newton D435i initialized ({', '.join(enabled)})")
@@ -175,18 +205,18 @@ class NewtonDepthSensor:
                 self.depth_image, transforms, self.depth_rays, self.forward_depth_image
             )
             depth_m = self.forward_depth_image.numpy()[0, 0]
-            valid = (depth_m >= DEPTH_RANGE_MIN) & (depth_m <= DEPTH_RANGE_MAX)
+            valid = (depth_m >= self.config.depth_range_min) & (depth_m <= self.config.depth_range_max)
             depth_mm = np.zeros_like(depth_m, dtype=np.uint16)
             depth_mm[valid] = (depth_m[valid] * 1000.0).astype(np.uint16)
 
             msg = Image()
             msg.header.stamp = stamp
-            msg.header.frame_id = DEPTH_OPTICAL_FRAME
-            msg.height = HEIGHT
-            msg.width = WIDTH
+            msg.header.frame_id = self.config.depth_optical_frame
+            msg.height = self.config.height
+            msg.width = self.config.width
             msg.encoding = "16UC1"
             msg.is_bigendian = False
-            msg.step = WIDTH * 2
+            msg.step = self.config.width * 2
             msg.data = depth_mm.tobytes()
             self.depth_image_pub.publish(msg)
 
@@ -195,17 +225,17 @@ class NewtonDepthSensor:
 
         if self.enable_color:
             self.sensor.update(state, transforms, self.color_rays, color_image=self.color_image)
-            rgba = self.color_image.numpy()[0, 0].view(np.uint8).reshape(HEIGHT, WIDTH, 4)
+            rgba = self.color_image.numpy()[0, 0].view(np.uint8).reshape(self.config.height, self.config.width, 4)
             rgb = np.ascontiguousarray(rgba[:, :, :3])
 
             msg = Image()
             msg.header.stamp = stamp
-            msg.header.frame_id = COLOR_OPTICAL_FRAME
-            msg.height = HEIGHT
-            msg.width = WIDTH
+            msg.header.frame_id = self.config.color_optical_frame
+            msg.height = self.config.height
+            msg.width = self.config.width
             msg.encoding = "rgb8"
             msg.is_bigendian = False
-            msg.step = WIDTH * 3
+            msg.step = self.config.width * 3
             msg.data = rgb.tobytes()
             self.color_image_pub.publish(msg)
 
@@ -216,12 +246,12 @@ class NewtonDepthSensor:
             self._publish_pointcloud(depth_m, stamp)
 
     def _publish_pointcloud(self, depth_m, stamp):
-        valid = (depth_m >= DEPTH_RANGE_MIN) & (depth_m <= DEPTH_RANGE_MAX)
+        valid = (depth_m >= self.config.depth_range_min) & (depth_m <= self.config.depth_range_max)
         z_coords = depth_m[valid].astype(np.float32)
         x_coords = (self._x_factor[valid] * z_coords).astype(np.float32)
         y_coords = (self._y_factor[valid] * z_coords).astype(np.float32)
         self.pointcloud_pub.publish(
-            make_structured_xyz_pointcloud(x_coords, y_coords, z_coords, stamp, DEPTH_OPTICAL_FRAME)
+            make_structured_xyz_pointcloud(x_coords, y_coords, z_coords, stamp, self.config.depth_optical_frame)
         )
 
     def get_static_transforms(self, stamp):
@@ -229,12 +259,12 @@ class NewtonDepthSensor:
             return []
 
         mount_pos, mount_rot = site_local_pose(self.model, self.site_index)
-        mount_pos = mount_pos + mount_rot @ D435I_FORWARD_OFFSET_VEC
+        mount_pos = mount_pos + mount_rot @ np.array(self.config.forward_offset, dtype=np.float64)
         transforms = [
-            make_transform(stamp, "base_link", "camera_link", mount_pos, quat_from_matrix(mount_rot)),
-            make_transform(stamp, "camera_link", "camera_depth_frame", [0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]),
-            make_transform(stamp, "camera_depth_frame", DEPTH_OPTICAL_FRAME, [0.0, 0.0, 0.0], OPTICAL_QUAT_XYZW),
-            make_transform(stamp, "camera_link", "camera_color_frame", [0.0, 0.0, -0.015], [0.0, 0.0, 0.0, 1.0]),
-            make_transform(stamp, "camera_color_frame", COLOR_OPTICAL_FRAME, [0.0, 0.0, 0.0], OPTICAL_QUAT_XYZW),
+            make_transform(stamp, "base_link", self.config.camera_link_frame, mount_pos, quat_from_matrix(mount_rot)),
+            make_transform(stamp, self.config.camera_link_frame, self.config.depth_frame, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0, 1.0]),
+            make_transform(stamp, self.config.depth_frame, self.config.depth_optical_frame, [0.0, 0.0, 0.0], OPTICAL_QUAT_XYZW),
+            make_transform(stamp, self.config.camera_link_frame, self.config.color_frame, [0.0, 0.0, -0.015], [0.0, 0.0, 0.0, 1.0]),
+            make_transform(stamp, self.config.color_frame, self.config.color_optical_frame, [0.0, 0.0, 0.0], OPTICAL_QUAT_XYZW),
         ]
         return transforms

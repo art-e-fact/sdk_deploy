@@ -1,347 +1,298 @@
 """
 Simulated Intel RealSense D435i depth camera using MuJoCo offscreen rendering.
-Publishes depth image, color image, CameraInfo, and PointCloud2 on standard
-realsense-ros topic names.
+Publishes depth image, color image, CameraInfo, and PointCloud2 on configured topics.
 """
 
-import numpy as np
 import mujoco
-
+import numpy as np
+from geometry_msgs.msg import Quaternion, TransformStamped, Vector3
 from rclpy.node import Node
-from sensor_msgs.msg import Image, CameraInfo, PointCloud2, PointField
-from geometry_msgs.msg import TransformStamped, Quaternion, Vector3
 from scipy.spatial.transform import Rotation as R_scipy
-from sensors.common.camera import D435I_FORWARD_OFFSET, D435I_MOUNT_SITE_NAME
-from sensors.common.resources import D435I_XML_PATH
+from sensor_msgs.msg import CameraInfo, Image, PointCloud2, PointField
 
-# -- D435i configuration --
+from sensors.common.camera import make_camera_info
+from sensors.common.resources import D435I_XML_PATH
+from simulation_config import RealsenseConfig
+
+DEPTH_FREQUENCY_HZ = 15.0
 DEPTH_CAMERA_NAME = "d435i-depth"
 COLOR_CAMERA_NAME = "d435i-color"
-DEPTH_FREQUENCY_HZ = 15.0
 
-WIDTH = 640
-HEIGHT = 480
-
-# D435i depth specs
-DEPTH_RANGE_MIN = 0.105  # metres
-DEPTH_RANGE_MAX = 10.0   # metres
-
-# D435i intrinsics (640x480)
-# Depth: HFOV=87deg => fx = 320 / tan(87/2 * pi/180) = 382.68
-DEPTH_FX = 382.68
-DEPTH_FY = 382.68
-DEPTH_CX = 320.0
-DEPTH_CY = 240.0
-
-# Color: HFOV=69deg => fx = 320 / tan(69/2 * pi/180) = 615.69
-COLOR_FX = 615.69
-COLOR_FY = 615.69
-COLOR_CX = 320.0
-COLOR_CY = 240.0
-
-# Frame IDs (match realsense-ros defaults)
-DEPTH_OPTICAL_FRAME = "camera_depth_optical_frame"
-COLOR_OPTICAL_FRAME = "camera_color_optical_frame"
-
-# Topic names (match realsense-ros defaults)
-DEPTH_IMAGE_TOPIC = "/camera/depth/image_rect_raw"
-DEPTH_INFO_TOPIC = "/camera/depth/camera_info"
-COLOR_IMAGE_TOPIC = "/camera/color/image_raw"
-COLOR_INFO_TOPIC = "/camera/color/camera_info"
-POINTCLOUD_TOPIC = "/camera/depth/color/points"
-
-# MuJoCo camera frame to ROS camera_link frame rotation matrix.
-# MuJoCo camera: X=right, Y=up, Z=backward (-Z is forward).
-# ROS camera_link (REP-103): X=forward, Y=left, Z=up.
-_MJ_CAM_TO_CL = np.array([[0, -1, 0],
-							[0,  0, 1],
-							[-1, 0, 0]], dtype=np.float64)
-
-# Standard optical rotation quaternion (camera_link -> optical frame).
-# RPY(-pi/2, 0, -pi/2): maps X-fwd/Y-left/Z-up to X-right/Y-down/Z-fwd.
+_MJ_CAM_TO_CL = np.array([
+    [0, -1, 0],
+    [0, 0, 1],
+    [-1, 0, 0],
+], dtype=np.float64)
 _OPT_QUAT_XYZW = (-0.5, 0.5, -0.5, 0.5)
 
 
-def _make_camera_info(fx, fy, cx, cy, width, height, frame_id):
-	"""Build a CameraInfo message with pinhole intrinsics (no distortion)."""
-	msg = CameraInfo()
-	msg.header.frame_id = frame_id
-	msg.width = width
-	msg.height = height
-	msg.distortion_model = "plumb_bob"
-	msg.d = [0.0, 0.0, 0.0, 0.0, 0.0]
-	msg.k = [fx, 0.0, cx,
-			 0.0, fy, cy,
-			 0.0, 0.0, 1.0]
-	msg.r = [1.0, 0.0, 0.0,
-			 0.0, 1.0, 0.0,
-			 0.0, 0.0, 1.0]
-	msg.p = [fx, 0.0, cx, 0.0,
-			 0.0, fy, cy, 0.0,
-			 0.0, 0.0, 1.0, 0.0]
-	return msg
-
-
 class DepthSensor:
-	@staticmethod
-	def init_visuals(spec):
-		"""Attach the D435i body to the TORSO d435i_mount site.
+    @staticmethod
+    def init_visuals(spec, config: RealsenseConfig | None = None):
+        config = config or RealsenseConfig()
+        if not D435I_XML_PATH.is_file():
+            raise FileNotFoundError(f"D435i XML not found: {D435I_XML_PATH}")
+        d435i_spec = mujoco.MjSpec.from_file(str(D435I_XML_PATH))
+        torso = spec.worldbody.first_body()
+        mount_site = next(site for site in torso.sites if site.name == config.mount_site_name)
+        mount_site.pos = [
+            mount_site.pos[0] + config.forward_offset[0],
+            mount_site.pos[1] + config.forward_offset[1],
+            mount_site.pos[2] + config.forward_offset[2],
+        ]
+        spec.attach(d435i_spec, prefix="d435i-", site=mount_site)
 
-		Call on the MjSpec before compile() when any RealSense output
-		(depth/color/pointcloud) is enabled.
-		"""
-		if not D435I_XML_PATH.is_file():
-			raise FileNotFoundError(f"D435i XML not found: {D435I_XML_PATH}")
-		d435i_spec = mujoco.MjSpec.from_file(str(D435I_XML_PATH))
-		torso = spec.worldbody.first_body()
-		mount_site = next(s for s in torso.sites if s.name == D435I_MOUNT_SITE_NAME)
-		# Move realsense a bit further forward to avoid capturing robot body
-		mount_site.pos = [
-			mount_site.pos[0] + D435I_FORWARD_OFFSET[0],
-			mount_site.pos[1] + D435I_FORWARD_OFFSET[1],
-			mount_site.pos[2] + D435I_FORWARD_OFFSET[2],
-		]
-		spec.attach(d435i_spec, prefix='d435i-', site=mount_site)
+    def __init__(
+        self,
+        model: mujoco.MjModel,
+        data: mujoco.MjData,
+        node: Node,
+        viewer=None,
+        enable_depth: bool = False,
+        enable_color: bool = False,
+        enable_pointcloud: bool = False,
+        config: RealsenseConfig | None = None,
+    ):
+        self.config = config or RealsenseConfig(
+            enable_depth=enable_depth,
+            enable_color=enable_color,
+            enable_pointcloud=enable_pointcloud,
+        )
+        self.model = model
+        self.data = data
+        self.node = node
+        self.enable_depth = self.config.enable_depth
+        self.enable_color = self.config.enable_color
+        self.enable_pointcloud = self.config.enable_pointcloud
 
-	def __init__(self, model: mujoco.MjModel, data: mujoco.MjData,
-				 node: Node, viewer=None,
-				 enable_depth: bool = False,
-				 enable_color: bool = False,
-				 enable_pointcloud: bool = False):
-		self.model = model
-		self.data = data
-		self.node = node
+        if self.enable_pointcloud and not self.enable_depth:
+            raise ValueError("enable_pointcloud requires enable_depth")
 
-		if enable_pointcloud and not enable_depth:
-			raise ValueError("enable_pointcloud requires enable_depth")
+        self.enabled = self.enable_depth or self.enable_color
+        if not self.enabled:
+            self.depth_cam_id = -1
+            self.color_cam_id = -1
+            node.get_logger().info("[INFO] D435i depth sensor disabled")
+            return
 
-		self.enable_depth = enable_depth
-		self.enable_color = enable_color
-		self.enable_pointcloud = enable_pointcloud
-		self.enabled = enable_depth or enable_color
+        self.depth_cam_id = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_CAMERA, self.config.depth_camera_name
+        )
+        self.color_cam_id = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_CAMERA, self.config.color_camera_name
+        )
+        if self.enable_depth and self.depth_cam_id < 0:
+            raise ValueError(f"Camera '{self.config.depth_camera_name}' not found in model")
+        if self.enable_color and self.color_cam_id < 0:
+            raise ValueError(f"Camera '{self.config.color_camera_name}' not found in model")
 
-		if not self.enabled:
-			self.depth_cam_id = -1
-			self.color_cam_id = -1
-			node.get_logger().info("[INFO] D435i depth sensor disabled")
-			return
+        self.depth_renderer = (
+            mujoco.Renderer(model, height=self.config.height, width=self.config.width)
+            if self.enable_depth else None
+        )
+        self.color_renderer = (
+            mujoco.Renderer(model, height=self.config.height, width=self.config.width)
+            if self.enable_color else None
+        )
 
-		# Look up camera IDs
-		self.depth_cam_id = mujoco.mj_name2id(
-			model, mujoco.mjtObj.mjOBJ_CAMERA, DEPTH_CAMERA_NAME)
-		self.color_cam_id = mujoco.mj_name2id(
-			model, mujoco.mjtObj.mjOBJ_CAMERA, COLOR_CAMERA_NAME)
-		if self.enable_depth and self.depth_cam_id < 0:
-			raise ValueError(f"Camera '{DEPTH_CAMERA_NAME}' not found in model")
-		if self.enable_color and self.color_cam_id < 0:
-			raise ValueError(f"Camera '{COLOR_CAMERA_NAME}' not found in model")
+        if self.enable_depth:
+            self._depth_info = make_camera_info(
+                self.config.depth_fx,
+                self.config.depth_fy,
+                self.config.depth_cx,
+                self.config.depth_cy,
+                self.config.width,
+                self.config.height,
+                self.config.depth_optical_frame,
+            )
+        if self.enable_color:
+            self._color_info = make_camera_info(
+                self.config.color_fx,
+                self.config.color_fy,
+                self.config.color_cx,
+                self.config.color_cy,
+                self.config.width,
+                self.config.height,
+                self.config.color_optical_frame,
+            )
 
-		# Offscreen renderers (only allocate what's needed)
-		self.depth_renderer = (
-			mujoco.Renderer(model, height=HEIGHT, width=WIDTH)
-			if self.enable_depth else None)
-		self.color_renderer = (
-			mujoco.Renderer(model, height=HEIGHT, width=WIDTH)
-			if self.enable_color else None)
+        if self.enable_pointcloud:
+            pixel_x = np.arange(self.config.width, dtype=np.float32)
+            pixel_y = np.arange(self.config.height, dtype=np.float32)
+            self._u_grid, self._v_grid = np.meshgrid(pixel_x, pixel_y)
+            self._x_factor = (self._u_grid - self.config.depth_cx) / self.config.depth_fx
+            self._y_factor = (self._v_grid - self.config.depth_cy) / self.config.depth_fy
 
-		# Precompute constant CameraInfo messages
-		if self.enable_depth:
-			self._depth_info = _make_camera_info(
-				DEPTH_FX, DEPTH_FY, DEPTH_CX, DEPTH_CY,
-				WIDTH, HEIGHT, DEPTH_OPTICAL_FRAME)
-		if self.enable_color:
-			self._color_info = _make_camera_info(
-				COLOR_FX, COLOR_FY, COLOR_CX, COLOR_CY,
-				WIDTH, HEIGHT, COLOR_OPTICAL_FRAME)
+        if self.enable_depth:
+            self.depth_image_pub = node.create_publisher(Image, self.config.depth_image_topic, 10)
+            self.depth_info_pub = node.create_publisher(CameraInfo, self.config.depth_info_topic, 10)
+        if self.enable_color:
+            self.color_image_pub = node.create_publisher(Image, self.config.color_image_topic, 10)
+            self.color_info_pub = node.create_publisher(CameraInfo, self.config.color_info_topic, 10)
+        if self.enable_pointcloud:
+            self.pointcloud_pub = node.create_publisher(PointCloud2, self.config.pointcloud_topic, 10)
 
-		# Precompute pixel grid for pointcloud back-projection
-		if self.enable_pointcloud:
-			u = np.arange(WIDTH, dtype=np.float32)
-			v = np.arange(HEIGHT, dtype=np.float32)
-			self._u_grid, self._v_grid = np.meshgrid(u, v)
-			self._x_factor = (self._u_grid - DEPTH_CX) / DEPTH_FX
-			self._y_factor = (self._v_grid - DEPTH_CY) / DEPTH_FY
+        enabled = [
+            name for name, active in (
+                ("depth", self.enable_depth),
+                ("color", self.enable_color),
+                ("pointcloud", self.enable_pointcloud),
+            ) if active
+        ]
+        node.get_logger().info(
+            f"[INFO] D435i depth sensor initialized "
+            f"({self.config.width}x{self.config.height} @ {self.config.frequency_hz} Hz, "
+            f"enabled: {', '.join(enabled) or 'none'})"
+        )
 
-		# ROS publishers (only create what's needed)
-		if self.enable_depth:
-			self.depth_image_pub = node.create_publisher(Image, DEPTH_IMAGE_TOPIC, 10)
-			self.depth_info_pub = node.create_publisher(CameraInfo, DEPTH_INFO_TOPIC, 10)
-		if self.enable_color:
-			self.color_image_pub = node.create_publisher(Image, COLOR_IMAGE_TOPIC, 10)
-			self.color_info_pub = node.create_publisher(CameraInfo, COLOR_INFO_TOPIC, 10)
-		if self.enable_pointcloud:
-			self.pointcloud_pub = node.create_publisher(PointCloud2, POINTCLOUD_TOPIC, 10)
+    def update(self, timestamp: float):
+        if not self.enabled:
+            return
+        stamp = self.node.get_clock().now().to_msg()
+        depth_m = None
 
-		enabled = [s for s, e in [('depth', self.enable_depth),
-								   ('color', self.enable_color),
-								   ('pointcloud', self.enable_pointcloud)] if e]
-		node.get_logger().info(
-			f"[INFO] D435i depth sensor initialized "
-			f"({WIDTH}x{HEIGHT} @ {DEPTH_FREQUENCY_HZ} Hz, "
-			f"enabled: {', '.join(enabled) or 'none'})")
+        if self.enable_depth:
+            self.depth_renderer.update_scene(self.data, camera=self.config.depth_camera_name)
+            self.depth_renderer.enable_depth_rendering()
+            depth_m = self.depth_renderer.render().copy()
+            self.depth_renderer.disable_depth_rendering()
 
-	def update(self, timestamp: float):
-		"""Render depth + color and publish enabled topics."""
-		if not self.enabled:
-			return
-		stamp = self.node.get_clock().now().to_msg()
-		depth_m = None
+            invalid = (depth_m < self.config.depth_range_min) | (depth_m > self.config.depth_range_max)
+            depth_mm = (depth_m * 1000.0).astype(np.uint16)
+            depth_mm[invalid] = 0
 
-		# --- Depth ---
-		if self.enable_depth:
-			self.depth_renderer.update_scene(self.data, camera=DEPTH_CAMERA_NAME)
-			self.depth_renderer.enable_depth_rendering()
-			depth_buf = self.depth_renderer.render()  # float32 (H, W), metres
-			self.depth_renderer.disable_depth_rendering()
+            depth_msg = Image()
+            depth_msg.header.stamp = stamp
+            depth_msg.header.frame_id = self.config.depth_optical_frame
+            depth_msg.height = self.config.height
+            depth_msg.width = self.config.width
+            depth_msg.encoding = "16UC1"
+            depth_msg.is_bigendian = False
+            depth_msg.step = self.config.width * 2
+            depth_msg.data = depth_mm.tobytes()
+            self.depth_image_pub.publish(depth_msg)
 
-			depth_m = depth_buf.copy()
-			invalid = (depth_m < DEPTH_RANGE_MIN) | (depth_m > DEPTH_RANGE_MAX)
-			depth_mm = (depth_m * 1000.0).astype(np.uint16)
-			depth_mm[invalid] = 0
+            self._depth_info.header.stamp = stamp
+            self.depth_info_pub.publish(self._depth_info)
 
-			depth_msg = Image()
-			depth_msg.header.stamp = stamp
-			depth_msg.header.frame_id = DEPTH_OPTICAL_FRAME
-			depth_msg.height = HEIGHT
-			depth_msg.width = WIDTH
-			depth_msg.encoding = "16UC1"
-			depth_msg.is_bigendian = False
-			depth_msg.step = WIDTH * 2
-			depth_msg.data = depth_mm.tobytes()
-			self.depth_image_pub.publish(depth_msg)
+        if self.enable_color:
+            self.color_renderer.update_scene(self.data, camera=self.config.color_camera_name)
+            rgb_buf = self.color_renderer.render()
 
-			self._depth_info.header.stamp = stamp
-			self.depth_info_pub.publish(self._depth_info)
+            color_msg = Image()
+            color_msg.header.stamp = stamp
+            color_msg.header.frame_id = self.config.color_optical_frame
+            color_msg.height = self.config.height
+            color_msg.width = self.config.width
+            color_msg.encoding = "rgb8"
+            color_msg.is_bigendian = False
+            color_msg.step = self.config.width * 3
+            color_msg.data = rgb_buf.tobytes()
+            self.color_image_pub.publish(color_msg)
 
-		# --- Color ---
-		if self.enable_color:
-			self.color_renderer.update_scene(self.data, camera=COLOR_CAMERA_NAME)
-			rgb_buf = self.color_renderer.render()  # uint8 (H, W, 3)
+            self._color_info.header.stamp = stamp
+            self.color_info_pub.publish(self._color_info)
 
-			color_msg = Image()
-			color_msg.header.stamp = stamp
-			color_msg.header.frame_id = COLOR_OPTICAL_FRAME
-			color_msg.height = HEIGHT
-			color_msg.width = WIDTH
-			color_msg.encoding = "rgb8"
-			color_msg.is_bigendian = False
-			color_msg.step = WIDTH * 3
-			color_msg.data = rgb_buf.tobytes()
-			self.color_image_pub.publish(color_msg)
+        if self.enable_pointcloud and depth_m is not None:
+            self._publish_pointcloud(depth_m, stamp)
 
-			self._color_info.header.stamp = stamp
-			self.color_info_pub.publish(self._color_info)
+    def _publish_pointcloud(self, depth_m, stamp):
+        valid = (depth_m >= self.config.depth_range_min) & (depth_m <= self.config.depth_range_max)
+        z_coords = depth_m[valid].astype(np.float32)
+        x_coords = (self._x_factor[valid] * z_coords).astype(np.float32)
+        y_coords = (self._y_factor[valid] * z_coords).astype(np.float32)
 
-		# --- PointCloud2 ---
-		if self.enable_pointcloud and depth_m is not None:
-			self._publish_pointcloud(depth_m, stamp)
+        point_count = len(z_coords)
+        point_step = 12
+        data = np.empty(point_count, dtype=[("x", np.float32), ("y", np.float32), ("z", np.float32)])
+        data["x"] = x_coords
+        data["y"] = y_coords
+        data["z"] = z_coords
 
-	def _publish_pointcloud(self, depth_m, stamp):
-		"""Back-project depth to 3D and publish PointCloud2 (XYZ only)."""
-		valid = (depth_m >= DEPTH_RANGE_MIN) & (depth_m <= DEPTH_RANGE_MAX)
-		z = depth_m[valid].astype(np.float32)
-		x = (self._x_factor[valid] * z).astype(np.float32)
-		y = (self._y_factor[valid] * z).astype(np.float32)
+        msg = PointCloud2()
+        msg.header.stamp = stamp
+        msg.header.frame_id = self.config.depth_optical_frame
+        msg.height = 1
+        msg.width = point_count
+        msg.fields = [
+            PointField(name="x", offset=0, datatype=PointField.FLOAT32, count=1),
+            PointField(name="y", offset=4, datatype=PointField.FLOAT32, count=1),
+            PointField(name="z", offset=8, datatype=PointField.FLOAT32, count=1),
+        ]
+        msg.is_bigendian = False
+        msg.point_step = point_step
+        msg.row_step = point_step * point_count
+        msg.data = data.tobytes()
+        msg.is_dense = True
+        self.pointcloud_pub.publish(msg)
 
-		n_points = len(z)
-		point_step = 12
-		data = np.empty(n_points, dtype=[
-			('x', np.float32), ('y', np.float32),
-			('z', np.float32)])
-		data['x'] = x
-		data['y'] = y
-		data['z'] = z
+    def get_static_transforms(self, stamp):
+        transforms = []
+        if self.depth_cam_id < 0:
+            return transforms
 
-		msg = PointCloud2()
-		msg.header.stamp = stamp
-		msg.header.frame_id = DEPTH_OPTICAL_FRAME
-		msg.height = 1
-		msg.width = n_points
-		msg.fields = [
-			PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
-			PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
-			PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
-		]
-		msg.is_bigendian = False
-		msg.point_step = point_step
-		msg.row_step = point_step * n_points
-		msg.data = data.tobytes()
-		msg.is_dense = True
+        torso_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, "TORSO")
+        torso_pos = self.data.xpos[torso_id]
+        torso_rot = self.data.xmat[torso_id].reshape(3, 3)
+        depth_pos_w = self.data.cam_xpos[self.depth_cam_id]
+        depth_rot_w = self.data.cam_xmat[self.depth_cam_id].reshape(3, 3)
+        depth_pos_local = torso_rot.T @ (depth_pos_w - torso_pos)
+        depth_rot_local = torso_rot.T @ depth_rot_w
+        camera_link_rot = depth_rot_local @ _MJ_CAM_TO_CL
+        camera_link_quat = R_scipy.from_matrix(camera_link_rot).as_quat()
 
-		self.pointcloud_pub.publish(msg)
+        camera_link_tf = TransformStamped()
+        camera_link_tf.header.stamp = stamp
+        camera_link_tf.header.frame_id = "base_link"
+        camera_link_tf.child_frame_id = self.config.camera_link_frame
+        camera_link_tf.transform.translation = Vector3(
+            x=float(depth_pos_local[0]), y=float(depth_pos_local[1]), z=float(depth_pos_local[2])
+        )
+        camera_link_tf.transform.rotation = Quaternion(
+            x=float(camera_link_quat[0]), y=float(camera_link_quat[1]),
+            z=float(camera_link_quat[2]), w=float(camera_link_quat[3])
+        )
+        transforms.append(camera_link_tf)
 
-	def get_static_transforms(self, stamp):
-		"""Return static TFs for camera frames, read from MuJoCo model."""
-		transforms = []
-		if self.depth_cam_id < 0:
-			return transforms
+        depth_frame_tf = TransformStamped()
+        depth_frame_tf.header.stamp = stamp
+        depth_frame_tf.header.frame_id = self.config.camera_link_frame
+        depth_frame_tf.child_frame_id = self.config.depth_frame
+        depth_frame_tf.transform.rotation = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
+        transforms.append(depth_frame_tf)
 
-		torso_id = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_BODY, 'TORSO')
-		torso_pos = self.data.xpos[torso_id]
-		torso_rot = self.data.xmat[torso_id].reshape(3, 3)
+        depth_optical_tf = TransformStamped()
+        depth_optical_tf.header.stamp = stamp
+        depth_optical_tf.header.frame_id = self.config.depth_frame
+        depth_optical_tf.child_frame_id = self.config.depth_optical_frame
+        depth_optical_tf.transform.rotation = Quaternion(
+            x=_OPT_QUAT_XYZW[0], y=_OPT_QUAT_XYZW[1], z=_OPT_QUAT_XYZW[2], w=_OPT_QUAT_XYZW[3]
+        )
+        transforms.append(depth_optical_tf)
 
-		depth_pos_w = self.data.cam_xpos[self.depth_cam_id]
-		depth_rot_w = self.data.cam_xmat[self.depth_cam_id].reshape(3, 3)
+        if self.color_cam_id >= 0:
+            color_pos_w = self.data.cam_xpos[self.color_cam_id]
+            color_pos_local = torso_rot.T @ (color_pos_w - torso_pos)
+            offset_torso = color_pos_local - depth_pos_local
+            offset_camera_link = camera_link_rot.T @ offset_torso
 
-		depth_pos_local = torso_rot.T @ (depth_pos_w - torso_pos)
-		depth_rot_local = torso_rot.T @ depth_rot_w
+            color_frame_tf = TransformStamped()
+            color_frame_tf.header.stamp = stamp
+            color_frame_tf.header.frame_id = self.config.camera_link_frame
+            color_frame_tf.child_frame_id = self.config.color_frame
+            color_frame_tf.transform.translation = Vector3(
+                x=float(offset_camera_link[0]), y=float(offset_camera_link[1]), z=float(offset_camera_link[2])
+            )
+            color_frame_tf.transform.rotation = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
+            transforms.append(color_frame_tf)
 
-		cl_rot = depth_rot_local @ _MJ_CAM_TO_CL
-		cl_quat = R_scipy.from_matrix(cl_rot).as_quat()
+            color_optical_tf = TransformStamped()
+            color_optical_tf.header.stamp = stamp
+            color_optical_tf.header.frame_id = self.config.color_frame
+            color_optical_tf.child_frame_id = self.config.color_optical_frame
+            color_optical_tf.transform.rotation = Quaternion(
+                x=_OPT_QUAT_XYZW[0], y=_OPT_QUAT_XYZW[1], z=_OPT_QUAT_XYZW[2], w=_OPT_QUAT_XYZW[3]
+            )
+            transforms.append(color_optical_tf)
 
-		t1 = TransformStamped()
-		t1.header.stamp = stamp
-		t1.header.frame_id = 'base_link'
-		t1.child_frame_id = 'camera_link'
-		t1.transform.translation = Vector3(
-			x=float(depth_pos_local[0]),
-			y=float(depth_pos_local[1]),
-			z=float(depth_pos_local[2]))
-		t1.transform.rotation = Quaternion(
-			x=float(cl_quat[0]), y=float(cl_quat[1]),
-			z=float(cl_quat[2]), w=float(cl_quat[3]))
-		transforms.append(t1)
-
-		t2 = TransformStamped()
-		t2.header.stamp = stamp
-		t2.header.frame_id = 'camera_link'
-		t2.child_frame_id = 'camera_depth_frame'
-		t2.transform.rotation = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
-		transforms.append(t2)
-
-		t3 = TransformStamped()
-		t3.header.stamp = stamp
-		t3.header.frame_id = 'camera_depth_frame'
-		t3.child_frame_id = DEPTH_OPTICAL_FRAME
-		t3.transform.rotation = Quaternion(
-			x=_OPT_QUAT_XYZW[0], y=_OPT_QUAT_XYZW[1],
-			z=_OPT_QUAT_XYZW[2], w=_OPT_QUAT_XYZW[3])
-		transforms.append(t3)
-
-		if self.color_cam_id >= 0:
-			color_pos_w = self.data.cam_xpos[self.color_cam_id]
-			color_pos_local = torso_rot.T @ (color_pos_w - torso_pos)
-			offset_torso = color_pos_local - depth_pos_local
-			offset_cl = cl_rot.T @ offset_torso
-
-			t4 = TransformStamped()
-			t4.header.stamp = stamp
-			t4.header.frame_id = 'camera_link'
-			t4.child_frame_id = 'camera_color_frame'
-			t4.transform.translation = Vector3(
-				x=float(offset_cl[0]),
-				y=float(offset_cl[1]),
-				z=float(offset_cl[2]))
-			t4.transform.rotation = Quaternion(x=0.0, y=0.0, z=0.0, w=1.0)
-			transforms.append(t4)
-
-			t5 = TransformStamped()
-			t5.header.stamp = stamp
-			t5.header.frame_id = 'camera_color_frame'
-			t5.child_frame_id = COLOR_OPTICAL_FRAME
-			t5.transform.rotation = Quaternion(
-				x=_OPT_QUAT_XYZW[0], y=_OPT_QUAT_XYZW[1],
-				z=_OPT_QUAT_XYZW[2], w=_OPT_QUAT_XYZW[3])
-			transforms.append(t5)
-
-		return transforms
+        return transforms

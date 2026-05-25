@@ -123,16 +123,32 @@ install(TARGETS rl_deploy
   DESTINATION lib/${PROJECT_NAME}
 )
 
+set(LITE3_PYTHON_ENTRYPOINTS
+  interface/robot/simulation/start_simulation.py
+  interface/robot/simulation/mujoco_simulation_ros2.py
+  interface/robot/simulation/auto_waypoint_navigator.py
+)
+
+foreach(entrypoint IN LISTS LITE3_PYTHON_ENTRYPOINTS)
+  file(CHMOD ${CMAKE_CURRENT_SOURCE_DIR}/${entrypoint}
+    PERMISSIONS
+      OWNER_READ OWNER_WRITE OWNER_EXECUTE
+      GROUP_READ GROUP_EXECUTE
+      WORLD_READ WORLD_EXECUTE
+  )
+endforeach()
+
 # Install Python simulation scripts (runnable via: ros2 run lite3_sdk_deploy mujoco_simulation_ros2.py)
 install(PROGRAMS
+  interface/robot/simulation/start_simulation.py
   interface/robot/simulation/mujoco_simulation_ros2.py
-  interface/robot/simulation/newton_simulation_ros2.py
   interface/robot/simulation/auto_waypoint_navigator.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
 install(FILES
   interface/robot/simulation/procedural_scene_generator.py
+  interface/robot/simulation/simulation_config.py
   DESTINATION lib/${PROJECT_NAME}
 )
 

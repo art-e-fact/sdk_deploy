@@ -22,10 +22,11 @@ import numpy as np
 import mujoco
 import mujoco.viewer
 
-from sensors.mujoco.lidar_sensor import LidarSensor, LIDAR_FREQUENCY_HZ
-from sensors.mujoco.depth_sensor import DepthSensor, DEPTH_FREQUENCY_HZ
-from sensors.mujoco.mid360_lidar_sensor import Mid360LidarSensor, MID360_FREQUENCY_HZ
+from sensors.mujoco.lidar_sensor import LidarSensor
+from sensors.mujoco.depth_sensor import DepthSensor
+from sensors.mujoco.mid360_lidar_sensor import Mid360LidarSensor
 from procedural_scene_generator import build_procedural_spec
+from simulation_config import SimulationConfig
 
 import rclpy
 from rclpy.node import Node
@@ -74,38 +75,67 @@ JOINT_INIT = {
 }
 
 
+def _as_bool(value, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 class MuJoCoSimulationNode(Node):
     def __init__(self,
                  model_key: str = MODEL_NAME,
-                 xml_path: str = XML_PATH):
+                 xml_path: str | None = None,
+                 config: SimulationConfig | None = None):
 
         super().__init__('mujoco_simulation')
 
-        self.declare_parameter('use_procedural_scene', False)
-        self.declare_parameter('procedural_env_seed', -1)
-        self.declare_parameter('headless', False)
-        self.declare_parameter('enable_lidar', False)
-        self.declare_parameter('enable_mid360', False)
-        self.declare_parameter('enable_depth', False)
-        self.declare_parameter('enable_color', False)
-        self.declare_parameter('enable_pointcloud', False)
-        use_procedural_scene = bool(self.get_parameter('use_procedural_scene').value)
-        configured_seed = int(self.get_parameter('procedural_env_seed').value)
-        headless = bool(self.get_parameter('headless').value)
-        enable_lidar = bool(self.get_parameter('enable_lidar').value)
-        enable_mid360 = bool(self.get_parameter('enable_mid360').value)
-        enable_depth = bool(self.get_parameter('enable_depth').value)
-        enable_color = bool(self.get_parameter('enable_color').value)
-        enable_pointcloud = bool(self.get_parameter('enable_pointcloud').value)
+        config = config or SimulationConfig.load()
+        if xml_path:
+            config = config.with_overrides({"scene": xml_path})
+
+        self.declare_parameter('use_procedural_scene', config.use_procedural_scene)
+        self.declare_parameter('procedural_env_seed', config.procedural_env_seed)
+        self.declare_parameter('headless', config.headless)
+        self.declare_parameter('enable_lidar', config.sensors.lidar_2d.enabled)
+        self.declare_parameter('enable_mid360', config.sensors.mid360.enabled)
+        self.declare_parameter('enable_depth', config.sensors.realsense.enable_depth)
+        self.declare_parameter('enable_color', config.sensors.realsense.enable_color)
+        self.declare_parameter('enable_pointcloud', config.sensors.realsense.enable_pointcloud)
+
+        config = config.with_overrides({
+            "simulator": "mujoco",
+            "use_procedural_scene": _as_bool(self.get_parameter('use_procedural_scene').value, config.use_procedural_scene),
+            "procedural_env_seed": int(self.get_parameter('procedural_env_seed').value),
+            "headless": _as_bool(self.get_parameter('headless').value, config.headless),
+            "sensors.lidar_2d.enabled": _as_bool(self.get_parameter('enable_lidar').value, config.sensors.lidar_2d.enabled),
+            "sensors.mid360.enabled": _as_bool(self.get_parameter('enable_mid360').value, config.sensors.mid360.enabled),
+            "sensors.realsense.enable_depth": _as_bool(self.get_parameter('enable_depth').value, config.sensors.realsense.enable_depth),
+            "sensors.realsense.enable_color": _as_bool(self.get_parameter('enable_color').value, config.sensors.realsense.enable_color),
+            "sensors.realsense.enable_pointcloud": _as_bool(self.get_parameter('enable_pointcloud').value, config.sensors.realsense.enable_pointcloud),
+        })
+        errors = config.validate()
+        if errors:
+            raise ValueError("Invalid simulation config: " + "; ".join(errors))
+
+        use_procedural_scene = config.use_procedural_scene
+        configured_seed = config.procedural_env_seed
+        headless = config.headless
+        enable_lidar = config.sensors.lidar_2d.enabled
+        enable_mid360 = config.sensors.mid360.enabled
+        enable_depth = config.sensors.realsense.enable_depth
+        enable_color = config.sensors.realsense.enable_color
         use_viewer = USE_VIEWER and (not headless)
         self.procedural_waypoints_msg = None
 
         if use_procedural_scene:
-            if not os.path.isfile(LITE3_ROBOT_XML_PATH):
-                raise FileNotFoundError(f"Cannot find Lite3 robot MJCF: {LITE3_ROBOT_XML_PATH}")
+            robot_xml_path = config.resolved_robot_description()
+            if not os.path.isfile(robot_xml_path):
+                raise FileNotFoundError(f"Cannot find Lite3 robot MJCF: {robot_xml_path}")
             scene_seed = configured_seed if configured_seed >= 0 else random.randint(0, 2**31 - 1)
             spec, scene_meta = build_procedural_spec(
-                LITE3_ROBOT_XML_PATH,
+                robot_xml_path,
                 robot_start_xy=(-5.0, 0.0),
                 seed=scene_seed,
             )
@@ -120,6 +150,7 @@ class MuJoCoSimulationNode(Node):
                     f"[INFO] Publishing mission with {len(self.procedural_waypoints_msg.poses)} ordered waypoints on /procedural_waypoints"
                 )
         else:
+            xml_path = config.resolved_scene()
             if not os.path.isfile(xml_path):
                 raise FileNotFoundError(f"Cannot find MJCF: {xml_path}")
             spec = mujoco.MjSpec.from_file(xml_path)
@@ -127,12 +158,12 @@ class MuJoCoSimulationNode(Node):
 
         # Sensor-driven MjSpec mutations (must happen before compile)
         if enable_depth or enable_color:
-            DepthSensor.init_visuals(spec)
+            DepthSensor.init_visuals(spec, config.sensors.realsense)
             self.get_logger().info("[INFO] D435i model attached via mjSpec")
         if enable_lidar:
-            LidarSensor.init_visuals(spec)
+            LidarSensor.init_visuals(spec, config.sensors.lidar_2d)
         if enable_mid360:
-            Mid360LidarSensor.init_visuals(spec)
+            Mid360LidarSensor.init_visuals(spec, config.sensors.mid360)
             self.get_logger().info("[INFO] Mid360 model attached via mjSpec")
 
         self.model = spec.compile()
@@ -198,20 +229,18 @@ class MuJoCoSimulationNode(Node):
             self.get_logger().info("[INFO] Running MuJoCo in headless mode (viewer disabled)")
 
         # LiDAR sensor
-        self.lidar = LidarSensor(self.model, self.data, self, self.viewer, enabled=enable_lidar)
-        self.lidar_step_interval = int(1.0 / (LIDAR_FREQUENCY_HZ * DT))
+        self.lidar = LidarSensor(self.model, self.data, self, self.viewer, config=config.sensors.lidar_2d)
+        self.lidar_step_interval = max(1, int(1.0 / (config.sensors.lidar_2d.frequency_hz * DT)))
 
-        self.mid360 = Mid360LidarSensor(self.model, self.data, self, self.viewer, enabled=enable_mid360)
-        self.mid360_step_interval = int(1.0 / (MID360_FREQUENCY_HZ * DT))
+        self.mid360 = Mid360LidarSensor(self.model, self.data, self, self.viewer, config=config.sensors.mid360)
+        self.mid360_step_interval = max(1, int(1.0 / (config.sensors.mid360.frequency_hz * DT)))
 
         # Depth camera sensor (RealSense D435i)
         self.depth = DepthSensor(
             self.model, self.data, self, self.viewer,
-            enable_depth=enable_depth,
-            enable_color=enable_color,
-            enable_pointcloud=enable_pointcloud,
+            config=config.sensors.realsense,
         )
-        self.depth_step_interval = int(1.0 / (DEPTH_FREQUENCY_HZ * DT))
+        self.depth_step_interval = max(1, int(1.0 / (config.sensors.realsense.frequency_hz * DT)))
 
         # Publish all static transforms in one call
         self._publish_static_transforms()
@@ -480,21 +509,29 @@ class MuJoCoSimulationNode(Node):
         self.joints_pub.publish(joints_msg)
 
 
-if __name__ == "__main__":
+def run_mujoco(config: SimulationConfig, ros_args: list[str] | None = None):
+    rclpy.init(args=ros_args)
+    sim_node = MuJoCoSimulationNode(config=config)
+    try:
+        sim_node.start()
+    finally:
+        sim_node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
+
+
+def main():
     np.set_printoptions(precision=4, suppress=True)
     parser = argparse.ArgumentParser(description="Run Lite3 MuJoCo ROS2 simulation")
-    parser.add_argument(
-        "--xml",
-        dest="xml_path",
-        default=XML_PATH,
-        help="Path to top-level MuJoCo XML (default: Lite3_stair.xml)",
-    )
+    parser.add_argument("--config", default=None, help="Path to simulation YAML config")
     args, ros_args = parser.parse_known_args()
 
-    xml_path = str(Path(args.xml_path).expanduser().resolve())
+    config = SimulationConfig.load(args.config).with_overrides({"simulator": "mujoco"})
+    errors = config.validate()
+    if errors:
+        raise SystemExit("Invalid simulation config:\n- " + "\n- ".join(errors))
+    run_mujoco(config, ros_args)
 
-    rclpy.init(args=ros_args)
-    sim_node = MuJoCoSimulationNode(xml_path=xml_path)
-    sim_node.start()
-    sim_node.destroy_node()
-    rclpy.shutdown()
+
+if __name__ == "__main__":
+    main()

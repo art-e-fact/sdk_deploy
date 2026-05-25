@@ -15,8 +15,9 @@ if str(SIMULATION_DIR) not in sys.path:
 import rclpy
 
 from ros_bridge import NewtonRosBridge
-from simulation import DT, ODOM_EVERY_STEPS, PUBLISH_EVERY_STEPS, ROS_SPIN_EVERY_STEPS, NewtonSimulation, create_newton_viewer, default_mjcf_path
-from sensors.newton.sensor_manager import NewtonSensorManager
+from simulation import DT, ODOM_EVERY_STEPS, PUBLISH_EVERY_STEPS, ROS_SPIN_EVERY_STEPS, NewtonSimulation, create_newton_viewer
+from sensors.newton.sensor_manager import NewtonSensorManager, NewtonSensorOptions
+from simulation_config import SimulationConfig
 
 RENDER_EVERY_STEPS = 50
 
@@ -33,7 +34,7 @@ def run_loop(sim: NewtonSimulation, ros: NewtonRosBridge, sensors: NewtonSensorM
         if sim.step_count % ROS_SPIN_EVERY_STEPS == 0:
             ros.spin_once()
         sim.set_command(ros.read_latest_action())
-        sim.step()
+        sim.step()  
 
         if sensors is not None:
             sensors.update(sim.state_0, sim.step_count, sim.timestamp)
@@ -50,22 +51,19 @@ def run_loop(sim: NewtonSimulation, ros: NewtonRosBridge, sensors: NewtonSensorM
             sim.render()
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Run Lite3 Newton ROS2 simulation")
-    parser.add_argument("--mjcf", default=default_mjcf_path(), help="Path to Lite3 MJCF robot description")
-    parser.add_argument("--usd", default=None, help="Deprecated: path to Lite3 USD robot description")
-    parser.add_argument("--headless", dest="headless", action="store_true", default=True, help="Run without a Newton viewer")
-    parser.add_argument("--viewer", dest="headless", action="store_false", help="Show the Newton viewer")
-    args, ros_args = parser.parse_known_args()
-
+def run_newton(config: SimulationConfig, ros_args: list[str] | None = None):
     rclpy.init(args=ros_args)
-    viewer = None if args.headless else create_newton_viewer()
-    model_path = args.usd if args.usd is not None else args.mjcf
-    ros = NewtonRosBridge(headless=args.headless, model_path=model_path)
-    sensor_options = ros.sensor_options()
+    model_path = config.resolved_robot_description()
+    viewer = None if config.headless else create_newton_viewer()
+    ros = NewtonRosBridge(headless=config.headless, model_path=model_path)
+    sensor_options = NewtonSensorOptions(
+        lidar_2d=config.sensors.lidar_2d,
+        mid360=config.sensors.mid360,
+        realsense=config.sensors.realsense,
+    )
     sim = NewtonSimulation(
         model_path=model_path,
-        headless=args.headless,
+        headless=config.headless,
         viewer=viewer,
         logger=ros.get_logger(),
         sensor_options=sensor_options,
@@ -78,6 +76,18 @@ def main():
         ros.destroy()
         if rclpy.ok():
             rclpy.shutdown()
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Run Lite3 Newton ROS2 simulation")
+    parser.add_argument("--config", default=None, help="Path to simulation YAML config")
+    args, ros_args = parser.parse_known_args()
+
+    config = SimulationConfig.load(args.config).with_overrides({"simulator": "newton"})
+    errors = config.validate()
+    if errors:
+        raise SystemExit("Invalid simulation config:\n- " + "\n- ".join(errors))
+    run_newton(config, ros_args)
 
 
 if __name__ == "__main__":

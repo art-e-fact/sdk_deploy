@@ -71,18 +71,18 @@ In RViz2: Set **2D Goal Pose** to send a navigation goal
 
 ### Optional: Procedural Scene (MuJoCo)
 
-By default, simulation uses the authored static scene. To generate the environment procedurally at runtime with the full launch stack, use:
+By default, `mujoco_simulation_ros2.launch.py` uses the authored static-scene presets. To switch the full launch stack to a procedural environment, pass a procedural simulation config:
 
 ```bash
 ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py \
-  mode:=2 control_type:=0 use_procedural_scene:=true
+  mode:=2 control_type:=0 \
+  simulation_config:=src/Lite3_sdk_deploy/config/simulations/mujoco_procedural_rgbd_lidar.yaml
 ```
 
-Optional seed for reproducible layouts:
+For a reproducible procedural seed, create a small custom YAML from that preset and set `procedural_env_seed` there.
 
 ```bash
-ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py \
-  mode:=2 control_type:=0 use_procedural_scene:=true procedural_env_seed:=1234
+cp src/Lite3_sdk_deploy/config/simulations/mujoco_procedural_rgbd_lidar.yaml /tmp/my_proc_scene.yaml
 ```
 
 Stand the robot with "z" then put into RL control mode with "c". Drive the robot around with keyboard controls (wasd) to build the map.
@@ -130,7 +130,7 @@ Newton support is available as a minimal robot-only simulation path. It loads th
 ros2 launch lite3_sdk_deploy newton_simulation_ros2.launch.py control_type:=0 headless:=true
 ```
 
-To show the Newton viewer, set `headless:=false`:
+To show the Newton viewer, either omit `headless` or set `headless:=false`:
 
 ```bash
 ros2 launch lite3_sdk_deploy newton_simulation_ros2.launch.py control_type:=0 headless:=false
@@ -139,8 +139,12 @@ ros2 launch lite3_sdk_deploy newton_simulation_ros2.launch.py control_type:=0 he
 To use a different USD file:
 
 ```bash
+cat >/tmp/newton_custom.yaml <<'EOF'
+robot_description: /absolute/path/to/Lite3.usd
+headless: true
+EOF
 ros2 launch lite3_sdk_deploy newton_simulation_ros2.launch.py \
-  control_type:=0 headless:=true usd:=/absolute/path/to/Lite3.usd
+  control_type:=0 simulation_config:=/tmp/newton_custom.yaml
 ```
 
 ### Manual Velocity Commands
@@ -172,28 +176,40 @@ ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
 | `angular.z`   | Turn left / right     | 0.7 rad/s |
 
 
-## Simulated Sensors
+## Simulation Config
 
-Sensor modules live in `src/Lite3_sdk_deploy/interface/robot/simulation/`:
+Simulation startup is configured from `src/Lite3_sdk_deploy/config/simulation.yaml` and can be launched without the navigation/controller stack:
 
-| Sensor | File | Key topics |
-|--------|------|------------|
-| 2D LiDAR (RPLiDAR A2M8) | `lidar_sensor.py` | `/scan` |
-| Depth camera (RealSense D435i) | `depth_sensor.py` | `/camera/depth/image_rect_raw`, `/camera/color/image_raw`, `/camera/depth/color/points` |
-
-Each module has **enable/disable flags** at the top of the file to skip expensive computation:
-
-```python
-# lidar_sensor.py
-ENABLE_LIDAR = True
-
-# depth_sensor.py
-ENABLE_DEPTH = True
-ENABLE_COLOR = False
-ENABLE_POINTCLOUD = False  # requires ENABLE_DEPTH
+```bash
+ros2 launch lite3_sdk_deploy simulation.launch.py \
+  config:=src/Lite3_sdk_deploy/config/simulation.yaml
 ```
 
-Resolution (`WIDTH`/`HEIGHT`) and publish rate (`*_FREQUENCY_HZ`) are also configurable there.
+MuJoCo and the common launchfile modes now use small preset configs under `src/Lite3_sdk_deploy/config/simulations/`. For example:
+
+```bash
+ros2 launch lite3_sdk_deploy simulation.launch.py \
+  config:=src/Lite3_sdk_deploy/config/simulations/mujoco_rgbd_lidar.yaml
+```
+
+The higher-level launchfiles select these presets automatically and expose an optional `simulation_config:=...` override when a custom YAML is needed.
+
+Only `simulation.launch.py` exposes generic `simulation_overrides:=...` for targeted one-off changes without creating a new YAML. Use semicolon-separated dotted paths:
+
+```bash
+ros2 launch lite3_sdk_deploy simulation.launch.py \
+  config:=src/Lite3_sdk_deploy/config/simulations/mujoco_rgbd_lidar.yaml \
+  simulation_overrides:="headless=true;sensors.lidar_2d.visualize_rays=true"
+```
+
+Sensor enable flags and sensor tuning live under `sensors` in the YAML file:
+
+```bash
+ros2 launch lite3_sdk_deploy simulation.launch.py \
+  config:=/absolute/path/to/my_simulation.yaml
+```
+
+The default schema includes advanced topic, frame, camera, and mount-site fields with values matching the current simulated interfaces. Most users should only need the enable flags, paths, and rates.
 
 > **Note:** Currently, the color aligned depth topic is not published. In simulation, the two cameras are co-located so there is no need for alignment. We can publish the aligned depth topic to match how we interface with the real robot.
 
@@ -251,7 +267,13 @@ colcon build --packages-select lite3_sdk_deploy
 source install/setup.bash
 ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py \
   mode:=2 control_type:=0 \
-  xml:=Lite3_yourscene.xml
+  simulation_config:=/absolute/path/to/my_scene_simulation.yaml
+```
+
+where `my_scene_simulation.yaml` contains:
+
+```yaml
+scene: Lite3_yourscene.xml
 ```
 
 
@@ -266,7 +288,8 @@ ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py \
 
 - Launch:
 ```
-ros2 launch lite3_sdk_deploy mujoco_simulation_ros2_dddrm.launch.py mode:=0 xml:=stairs_floors.xml
+ros2 launch lite3_sdk_deploy mujoco_simulation_ros2_dddrm.launch.py \
+  mode:=0 simulation_config:=/absolute/path/to/mid360_stairs.yaml
 ```
 
 - (From another terminal) Save local map file:
@@ -288,7 +311,8 @@ sub_maps:
 ```
 - Launch:
 ```
-ros2 launch lite3_sdk_deploy mujoco_simulation_ros2_dddrm.launch.py mode:=1 xml:=stairs_floors.xml
+ros2 launch lite3_sdk_deploy mujoco_simulation_ros2_dddrm.launch.py \
+  mode:=1 simulation_config:=/absolute/path/to/mid360_stairs.yaml
 ```
 - In Rviz, click on "3D pose estimate" -> set initial pose, then click on "3D goal pose" -> set target goal for navigation
 

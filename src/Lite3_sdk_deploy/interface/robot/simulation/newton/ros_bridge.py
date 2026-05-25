@@ -8,7 +8,6 @@ from rclpy.node import Node
 from tf2_ros import TransformBroadcaster
 
 from simulation import DEFAULT_DAMPING, DEFAULT_JOINT_POS, DEFAULT_STIFFNESS, JointCommand, NUM_DOFS, quat_xyzw_to_rpy, rotate_world_to_body
-from sensors.newton.sensor_manager import NewtonSensorOptions
 
 
 class NewtonRosBridge:
@@ -16,12 +15,6 @@ class NewtonRosBridge:
         self.node = Node("newton_simulation")
         self.node.declare_parameter("headless", headless)
         self.node.declare_parameter("model_path", model_path)
-        self.node.declare_parameter("enable_lidar", False)
-        self.node.declare_parameter("enable_mid360", False)
-        self.node.declare_parameter("enable_depth", False)
-        self.node.declare_parameter("enable_color", False)
-        self.node.declare_parameter("enable_pointcloud", False)
-        self.node.declare_parameter("mid360_downsample", 1)
         self._shutdown_requested = False
 
         self.kp_cmd = np.full(NUM_DOFS, DEFAULT_STIFFNESS, dtype=np.float32)
@@ -55,16 +48,6 @@ class NewtonRosBridge:
             position=self.pos_cmd.copy(),
             velocity=self.vel_cmd.copy(),
             torque=self.tau_ff.copy(),
-        )
-
-    def sensor_options(self) -> NewtonSensorOptions:
-        return NewtonSensorOptions(
-            enable_lidar=bool(self.node.get_parameter("enable_lidar").value),
-            enable_mid360=bool(self.node.get_parameter("enable_mid360").value),
-            enable_depth=bool(self.node.get_parameter("enable_depth").value),
-            enable_color=bool(self.node.get_parameter("enable_color").value),
-            enable_pointcloud=bool(self.node.get_parameter("enable_pointcloud").value),
-            mid360_downsample=int(self.node.get_parameter("mid360_downsample").value),
         )
 
     def publish_state(self, timestamp: float, state, last_tau: np.ndarray):

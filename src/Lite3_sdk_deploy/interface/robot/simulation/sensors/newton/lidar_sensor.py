@@ -19,44 +19,49 @@ from sensors.common.lidar import (
 from sensors.common.transforms import make_transform, quat_from_matrix
 from sensors.newton.geometry import camera_transforms, find_builder_shape_index, find_site_index, site_local_pose, site_world_pose
 from sensors.newton.ray_buffers import rays_from_dirs
+from simulation_config import Lidar2DConfig
 
 MAX_ALL_INF_DEBUG_LOGS = 5
 
 
 class NewtonLidarSensor:
     @staticmethod
-    def init_visuals(builder):
-        site_index = find_builder_shape_index(builder, LIDAR_SITE_NAME)
+    def init_visuals(builder, config: Lidar2DConfig | None = None):
+        config = config or Lidar2DConfig()
+        site_index = find_builder_shape_index(builder, config.site_name)
         builder.shape_type[site_index] = newton.GeoType.CYLINDER
         builder.shape_scale[site_index] = (0.025, 0.01, 0.0)
         builder.shape_color[site_index] = (0.1, 0.1, 0.1)
         builder.shape_flags[site_index] |= int(newton.ShapeFlags.VISIBLE)
 
-    def __init__(self, model, node, enabled: bool = False):
+    def __init__(self, model, node, enabled: bool = False, config: Lidar2DConfig | None = None):
+        self.config = config or Lidar2DConfig(enabled=enabled)
         self.model = model
         self.node = node
-        self.enabled = enabled
+        self.enabled = self.config.enabled
         self.site_index = -1
 
-        if not enabled:
+        if not self.enabled:
             node.get_logger().info("[INFO] Newton LiDAR disabled")
             return
 
-        self.site_index = find_site_index(model, LIDAR_SITE_NAME)
+        self.site_index = find_site_index(model, self.config.site_name)
         self.body_id = int(model.shape_body.numpy()[self.site_index])
         self.shape_body = model.shape_body.numpy()
-        self.local_dirs = planar_lidar_dirs(NUM_RAYS)
+        self.local_dirs = planar_lidar_dirs(self.config.num_rays)
         self.rays = rays_from_dirs(self.local_dirs)
         self.sensor = SensorTiledCamera(model, load_textures=False)
-        self.depth_image = self.sensor.utils.create_depth_image_output(NUM_RAYS, 1)
-        self.shape_index_image = self.sensor.utils.create_shape_index_image_output(NUM_RAYS, 1)
+        self.depth_image = self.sensor.utils.create_depth_image_output(self.config.num_rays, 1)
+        self.shape_index_image = self.sensor.utils.create_shape_index_image_output(self.config.num_rays, 1)
 
-        self.pub = node.create_publisher(LaserScan, LIDAR_TOPIC, 10)
-        self.angle_increment = 2.0 * math.pi / NUM_RAYS
-        self.scan_time = 1.0 / LIDAR_FREQUENCY_HZ
-        self.time_increment = self.scan_time / (NUM_RAYS - 1)
+        self.pub = node.create_publisher(LaserScan, self.config.topic, 10)
+        self.angle_increment = 2.0 * math.pi / self.config.num_rays
+        self.scan_time = 1.0 / self.config.frequency_hz
+        self.time_increment = self.scan_time / max(1, self.config.num_rays - 1)
         self._all_inf_debug_logs = 0
-        node.get_logger().info(f"[INFO] Newton LiDAR initialized ({NUM_RAYS} rays @ {LIDAR_FREQUENCY_HZ} Hz)")
+        node.get_logger().info(
+            f"[INFO] Newton LiDAR initialized ({self.config.num_rays} rays @ {self.config.frequency_hz} Hz)"
+        )
 
     def update(self, state, timestamp: float):
         if not self.enabled:
@@ -77,7 +82,7 @@ class NewtonLidarSensor:
         raw_hit_count = int(np.count_nonzero(ranges > 0.0))
 
         ranges[ranges <= 0.0] = float("inf")
-        ranges[(ranges < RANGE_MIN) | (ranges > RANGE_MAX)] = float("inf")
+        ranges[(ranges < self.config.range_min) | (ranges > self.config.range_max)] = float("inf")
         range_hit_count = int(np.count_nonzero(ranges < float("inf")))
 
         # SensorTiledCamera has no bodyexclude option, so filter hits on the mounting body.
@@ -97,14 +102,14 @@ class NewtonLidarSensor:
 
         msg = LaserScan()
         msg.header.stamp = self.node.get_clock().now().to_msg()
-        msg.header.frame_id = LIDAR_FRAME_ID
+        msg.header.frame_id = self.config.frame_id
         msg.angle_min = -math.pi
         msg.angle_max = math.pi
         msg.angle_increment = self.angle_increment
         msg.time_increment = self.time_increment
         msg.scan_time = self.scan_time
-        msg.range_min = RANGE_MIN
-        msg.range_max = RANGE_MAX
+        msg.range_min = self.config.range_min
+        msg.range_max = self.config.range_max
         msg.ranges = ranges.astype(np.float32).tolist()
         self.pub.publish(msg)
 
@@ -112,4 +117,4 @@ class NewtonLidarSensor:
         if not self.enabled or self.site_index < 0:
             return []
         site_pos_local, site_rot = site_local_pose(self.model, self.site_index)
-        return [make_transform(stamp, "base_link", LIDAR_FRAME_ID, site_pos_local, quat_from_matrix(site_rot))]
+        return [make_transform(stamp, "base_link", self.config.frame_id, site_pos_local, quat_from_matrix(site_rot))]

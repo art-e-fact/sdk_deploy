@@ -1,11 +1,10 @@
 """Orchestrates Newton sensors at their own publish rates."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from tf2_ros import StaticTransformBroadcaster
 
-from sensors.common.camera import DEPTH_FREQUENCY_HZ
-from sensors.common.lidar import LIDAR_FREQUENCY_HZ, MID360_FREQUENCY_HZ
+from simulation_config import Lidar2DConfig, Mid360Config, RealsenseConfig
 from sensors.newton.bvh import NewtonBvh
 from sensors.newton.depth_sensor import NewtonDepthSensor
 from sensors.newton.lidar_sensor import NewtonLidarSensor
@@ -14,12 +13,25 @@ from sensors.newton.mid360_lidar_sensor import NewtonMid360LidarSensor
 
 @dataclass
 class NewtonSensorOptions:
-    enable_lidar: bool = False
-    enable_mid360: bool = False
-    enable_depth: bool = False
-    enable_color: bool = False
-    enable_pointcloud: bool = False
-    mid360_downsample: int = 1
+    lidar_2d: Lidar2DConfig = field(default_factory=Lidar2DConfig)
+    mid360: Mid360Config = field(default_factory=Mid360Config)
+    realsense: RealsenseConfig = field(default_factory=RealsenseConfig)
+
+    @property
+    def enable_lidar(self) -> bool:
+        return self.lidar_2d.enabled
+
+    @property
+    def enable_mid360(self) -> bool:
+        return self.mid360.enabled
+
+    @property
+    def enable_depth(self) -> bool:
+        return self.realsense.enable_depth
+
+    @property
+    def enable_color(self) -> bool:
+        return self.realsense.enable_color
 
 
 class NewtonSensorManager:
@@ -28,24 +40,21 @@ class NewtonSensorManager:
         self.node = node
         self.static_tf_broadcaster = StaticTransformBroadcaster(node)
 
-        self.lidar = NewtonLidarSensor(model, node, enabled=options.enable_lidar)
+        self.lidar = NewtonLidarSensor(model, node, config=options.lidar_2d)
         self.mid360 = NewtonMid360LidarSensor(
             model,
             node,
-            enabled=options.enable_mid360,
-            downsample=options.mid360_downsample,
+            config=options.mid360,
         )
         self.depth = NewtonDepthSensor(
             model,
             node,
-            enable_depth=options.enable_depth,
-            enable_color=options.enable_color,
-            enable_pointcloud=options.enable_pointcloud,
+            config=options.realsense,
         )
 
-        self.lidar_step_interval = max(1, int(1.0 / (LIDAR_FREQUENCY_HZ * dt)))
-        self.mid360_step_interval = max(1, int(1.0 / (MID360_FREQUENCY_HZ * dt)))
-        self.depth_step_interval = max(1, int(1.0 / (DEPTH_FREQUENCY_HZ * dt)))
+        self.lidar_step_interval = max(1, int(1.0 / (options.lidar_2d.frequency_hz * dt)))
+        self.mid360_step_interval = max(1, int(1.0 / (options.mid360.frequency_hz * dt)))
+        self.depth_step_interval = max(1, int(1.0 / (options.realsense.frequency_hz * dt)))
         self.bvh = NewtonBvh(model, state) if self.enabled else None
         self._publish_static_transforms()
 

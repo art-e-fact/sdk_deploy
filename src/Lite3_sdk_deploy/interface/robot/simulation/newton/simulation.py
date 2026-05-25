@@ -8,7 +8,6 @@ import numpy as np
 import newton
 import newton.examples
 import warp as wp
-from ament_index_python.packages import get_package_share_directory
 from newton import JointTargetMode
 
 from sensors.newton.depth_sensor import NewtonDepthSensor
@@ -49,37 +48,6 @@ class SimulationState:
     angvel_body: np.ndarray
     joint_position: np.ndarray
     joint_velocity: np.ndarray
-
-
-def default_mjcf_path() -> str:
-    try:
-        package_share_mjcf = Path(get_package_share_directory("lite3_sdk_deploy")) / "Lite3_description" / "lite3_mjcf" / "mjcf" / "Lite3.xml"
-        if package_share_mjcf.exists():
-            return str(package_share_mjcf)
-    except Exception:
-        pass
-
-    for parent in Path(__file__).resolve().parents:
-        candidate = parent / "Lite3_description" / "lite3_mjcf" / "mjcf" / "Lite3.xml"
-        if candidate.exists():
-            return str(candidate)
-    return str(Path(__file__).resolve().parents[4] / "Lite3_description" / "lite3_mjcf" / "mjcf" / "Lite3.xml")
-
-
-def default_usd_path() -> str:
-    try:
-        package_share_usd = Path(get_package_share_directory("lite3_sdk_deploy")) / "Lite3_description" / "Lite3_usd" / "Lite3.usd"
-        if package_share_usd.exists():
-            return str(package_share_usd)
-    except Exception:
-        pass
-
-    for parent in Path(__file__).resolve().parents:
-        candidate = parent / "Lite3_description" / "Lite3_usd" / "Lite3.usd"
-        if candidate.exists():
-            return str(candidate)
-    return str(Path(__file__).resolve().parents[4] / "Lite3_description" / "Lite3_usd" / "Lite3.usd")
-
 
 def create_newton_viewer():
     parser = newton.examples.create_parser()
@@ -150,7 +118,7 @@ class NewtonSimulation:
         self._log_info(f"Newton Lite3 simulation loaded: {self.model_path}")
         if self.viewer is not None:
             self._log_info("Newton viewer enabled because headless is false.")
-        self._log_info("Newton mode is flat terrain only; optional sensors are managed by the ROS runner.")
+        self._log_info("Optional sensors are managed by the ROS runner.")
 
     def set_command(self, command: JointCommand):
         self.kp_cmd[:] = command.kp
@@ -283,11 +251,11 @@ class NewtonSimulation:
             return
 
         if getattr(options, "enable_lidar", False):
-            NewtonLidarSensor.init_visuals(builder)
+            NewtonLidarSensor.init_visuals(builder, options.lidar_2d)
         if getattr(options, "enable_depth", False) or getattr(options, "enable_color", False):
-            NewtonDepthSensor.init_visuals(builder)
+            NewtonDepthSensor.init_visuals(builder, options.realsense)
         if getattr(options, "enable_mid360", False):
-            NewtonMid360LidarSensor.init_visuals(builder)
+            NewtonMid360LidarSensor.init_visuals(builder, options.mid360)
 
     def _simulate_physics_step(self, apply_viewer_forces: bool, keep_state_buffers: bool):
         self.state_0.clear_forces()
