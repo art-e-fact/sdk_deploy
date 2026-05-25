@@ -1,10 +1,19 @@
+# Reference only. This file is not loaded by the simulator.
+# Runtime defaults live in interface/robot/simulation/simulation_config.py.
+
 simulator: newton
+
+# Scene XML or MJCF for the environment.
 scene: package://lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/stairs_floors.xml
+
+# Robot description. Newton also supports the USD path below.
 robot_description: package://lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/Lite3.xml
-# Newton also supports: package://lite3_sdk_deploy/Lite3_description/Lite3_usd/Lite3.usd
+# robot_description: package://lite3_sdk_deploy/Lite3_description/Lite3_usd/Lite3.usd
+
+# Run without a viewer by default.
 headless: true
 
-# Legacy MuJoCo procedural scene knobs. Leave disabled for authored scenes.
+# Legacy MuJoCo procedural scene controls.
 use_procedural_scene: false
 procedural_env_seed: -1
 

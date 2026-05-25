@@ -21,7 +21,6 @@ PACKAGE_NAME = "lite3_sdk_deploy"
 DEFAULT_SCENE_URI = "package://lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/stairs_floors.xml"
 DEFAULT_ROBOT_DESCRIPTION_URI = "package://lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/Lite3.xml"
 DEFAULT_USD_URI = "package://lite3_sdk_deploy/Lite3_description/Lite3_usd/Lite3.usd"
-DEFAULT_CONFIG_RELATIVE_PATH = Path("config") / "simulation.yaml"
 
 
 @dataclass
@@ -114,7 +113,7 @@ class SimulationConfig:
 
 	@classmethod
 	def load(cls, config_path: str | None = None) -> "SimulationConfig":
-		data = _read_yaml(default_config_path())
+		data = _dataclass_to_dict(cls())
 		if config_path:
 			data = _deep_merge(data, _read_yaml(resolve_path(config_path)))
 		return cls.from_dict(data)
@@ -172,15 +171,6 @@ class SimulationConfig:
 		_validate_positive(errors, "sensors.mid360.downsample", sensors.mid360.downsample)
 		_validate_range(errors, "sensors.mid360", sensors.mid360.range_min, sensors.mid360.range_max)
 		return errors
-
-
-def default_config_path() -> Path:
-	for root in candidate_package_roots():
-		candidate = root / DEFAULT_CONFIG_RELATIVE_PATH
-		if candidate.exists():
-			return candidate
-	return candidate_package_roots()[0] / DEFAULT_CONFIG_RELATIVE_PATH
-
 
 def candidate_package_roots() -> list[Path]:
 	roots: list[Path] = []

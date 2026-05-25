@@ -175,15 +175,21 @@ ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
 | `linear.y`    | Strafe left / right   | 0.5 m/s   |
 | `angular.z`   | Turn left / right     | 0.7 rad/s |
 
+Or use a teleop tool like `teleop_twist_keyboard` for manual control:
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
+```
+
 
 ## Simulation Config
 
-Simulation startup is configured from `src/Lite3_sdk_deploy/config/simulation.yaml` and can be launched without the navigation/controller stack:
+Simulation startup now uses the dataclass defaults from `interface/robot/simulation/simulation_config.py` when no config file is provided. You can launch the simulator stack without passing any YAML:
 
 ```bash
-ros2 launch lite3_sdk_deploy simulation.launch.py \
-  config:=src/Lite3_sdk_deploy/config/simulation.yaml
+ros2 launch lite3_sdk_deploy simulation.launch.py
 ```
+
+For a full reference of all available fields and their default values, see `src/Lite3_sdk_deploy/config/simulation/reference.yaml`. That file is documentation only and is not loaded at runtime.
 
 MuJoCo and the common launchfile modes now use small preset configs under `src/Lite3_sdk_deploy/config/simulations/`. For example:
 
