@@ -14,8 +14,6 @@
 > ```
 > Run this on the host (outside the container) each new login/session.
 
-> **NVIDIA/Newton viewer note:** The devcontainer requests `--gpus=all`, NVIDIA graphics driver capabilities, GLX, and unlimited `memlock` for Warp/Newton viewer support. The host must have the NVIDIA driver and NVIDIA Container Toolkit installed, and the container must be rebuilt after changes to `.devcontainer/`. On the host, `docker run --rm --gpus all nvidia/cuda:12.4.1-base-ubuntu22.04 nvidia-smi` should work before opening the devcontainer.
-
 
 ### System dependencies:
   ```bash
@@ -122,30 +120,6 @@ ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py mode:=2 control_ty
 
 This launches MuJoCo, the RL twist controller, Nav2, RTAB-Map, and RViz together. The controller automatically stands the robot up and enters RL mode after ~5 seconds.
 
-### Newton Flat-Terrain Simulation
-
-Newton support runs the existing `rl_deploy` controller, subscribes to `/JOINTS_CMD`, and publishes `/JOINTS_DATA`, `/IMU_DATA`, and `/odom`. Newton loads `robot_description` for both USD and MJCF robot models. When `scene` is set to a separate MJCF environment, that environment is added first; otherwise Newton falls back to a flat ground plane. RTAB-Map, Nav2, and waypoint navigation are not launched in this mode.
-
-```bash
-ros2 launch lite3_sdk_deploy newton_simulation_ros2.launch.py control_type:=0 headless:=true
-```
-
-To show the Newton viewer, either omit `headless` or set `headless:=false`:
-
-```bash
-ros2 launch lite3_sdk_deploy newton_simulation_ros2.launch.py control_type:=0 headless:=false
-```
-
-To use a different USD file:
-
-```bash
-cat >/tmp/newton_custom.yaml <<'EOF'
-robot_description: /absolute/path/to/Lite3.usd
-headless: true
-EOF
-ros2 launch lite3_sdk_deploy newton_simulation_ros2.launch.py \
-  control_type:=0 simulation_config:=/tmp/newton_custom.yaml
-```
 
 ### Manual Velocity Commands
 
@@ -183,13 +157,13 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard
 
 ## Simulation Config
 
-Simulation startup now uses the dataclass defaults from `interface/robot/simulation/simulation_config.py` when no config file is provided. You can launch the simulator stack without passing any YAML:
+Simulation startup uses the dataclass defaults from `interface/robot/simulation/simulation_config.py` when no config file is provided. You can launch the simulator stack without passing any YAML:
 
 ```bash
 ros2 launch lite3_sdk_deploy simulation.launch.py
 ```
 
-For a full reference of all available fields and their default values, see `src/Lite3_sdk_deploy/config/simulation/reference.yaml`. That file is documentation only and is not loaded at runtime.
+For a full reference of all available fields and their default values, see `src/Lite3_sdk_deploy/config/simulations/reference.yaml`.
 
 MuJoCo and the common launchfile modes now use small preset configs under `src/Lite3_sdk_deploy/config/simulations/`. For example:
 
