@@ -15,7 +15,7 @@ setup(
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='root',
-    maintainer_email='azazdeaz@gmail.com',
+    maintainer_email='andras@artefacts.com',
     description='Rail detection and rail target following nodes.',
     license='TODO: License declaration',
     extras_require={

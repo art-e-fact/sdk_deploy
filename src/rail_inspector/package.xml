@@ -4,7 +4,7 @@
   <name>rail_inspector</name>
   <version>0.0.0</version>
   <description>Rail detection and rail target following nodes.</description>
-  <maintainer email="azazdeaz@gmail.com">root</maintainer>
+  <maintainer email="andras@artefacts.com">root</maintainer>
   <license>TODO: License declaration</license>
 
   <exec_depend>geometry_msgs</exec_depend>
