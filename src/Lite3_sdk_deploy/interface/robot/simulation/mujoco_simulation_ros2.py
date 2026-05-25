@@ -16,7 +16,9 @@ import struct
 import threading
 import argparse
 import random
+import tempfile
 from pathlib import Path
+from xml.sax.saxutils import quoteattr
 from scipy.spatial.transform import Rotation
 import numpy as np
 import mujoco
@@ -64,6 +66,44 @@ LITE3_ROBOT_XML_PATH = _resolve_resource_path("Lite3_description", "lite3_mjcf",
 
 
 USE_VIEWER = True
+
+
+def _add_ground_plane(spec: mujoco.MjSpec) -> None:
+    worldbody = spec.worldbody
+    floor = next((geom for geom in worldbody.geoms if geom.name == "floor"), None)
+    if floor is None:
+        floor = worldbody.add_geom()
+    floor.name = "floor"
+    floor.type = mujoco.mjtGeom.mjGEOM_PLANE
+    floor.pos = np.array([0.0, 0.0, 0.0], dtype=np.float64)
+    floor.size = np.array([20.0, 20.0, 0.1], dtype=np.float64)
+    floor.contype = 1
+    floor.conaffinity = 1
+    floor.material = "checker_mat"
+
+
+def _build_static_spec(scene_path: str | None, robot_xml_path: str) -> mujoco.MjSpec:
+    if not scene_path:
+        spec = mujoco.MjSpec.from_file(robot_xml_path)
+        _add_ground_plane(spec)
+        return spec
+
+    with tempfile.NamedTemporaryFile("w", suffix=".xml", delete=False, encoding="utf-8") as merged_file:
+        merged_file.write(
+            "<mujoco model=\"Lite3_static_scene\">\n"
+            f"  <include file={quoteattr(scene_path)}/>\n"
+            f"  <include file={quoteattr(robot_xml_path)}/>\n"
+            "</mujoco>\n"
+        )
+        merged_path = merged_file.name
+
+    try:
+        return mujoco.MjSpec.from_file(merged_path)
+    finally:
+        try:
+            os.unlink(merged_path)
+        except OSError:
+            pass
 DT = 0.001
 RENDER_INTERVAL = 50
 
@@ -150,11 +190,15 @@ class MuJoCoSimulationNode(Node):
                     f"[INFO] Publishing mission with {len(self.procedural_waypoints_msg.poses)} ordered waypoints on /procedural_waypoints"
                 )
         else:
-            xml_path = config.resolved_scene()
-            if not os.path.isfile(xml_path):
-                raise FileNotFoundError(f"Cannot find MJCF: {xml_path}")
-            spec = mujoco.MjSpec.from_file(xml_path)
-            self.get_logger().info("[INFO] Using default static scene")
+            robot_xml_path = config.resolved_robot_description()
+            if not os.path.isfile(robot_xml_path):
+                raise FileNotFoundError(f"Cannot find Lite3 robot MJCF: {robot_xml_path}")
+            scene_path = config.resolved_scene()
+            spec = _build_static_spec(scene_path, robot_xml_path)
+            if scene_path:
+                self.get_logger().info(f"[INFO] Using static environment scene: {scene_path}")
+            else:
+                self.get_logger().info("[INFO] No static scene configured; using the robot model with a generated floor")
 
         # Sensor-driven MjSpec mutations (must happen before compile)
         if enable_depth or enable_color:

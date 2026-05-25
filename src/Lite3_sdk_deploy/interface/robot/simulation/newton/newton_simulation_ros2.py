@@ -19,7 +19,7 @@ from simulation import DT, ODOM_EVERY_STEPS, PUBLISH_EVERY_STEPS, ROS_SPIN_EVERY
 from sensors.newton.sensor_manager import NewtonSensorManager, NewtonSensorOptions
 from simulation_config import SimulationConfig
 
-RENDER_EVERY_STEPS = 50
+RENDER_EVERY_STEPS = 5
 
 def run_loop(sim: NewtonSimulation, ros: NewtonRosBridge, sensors: NewtonSensorManager | None = None):
     next_step_time = time.perf_counter()
@@ -54,6 +54,7 @@ def run_loop(sim: NewtonSimulation, ros: NewtonRosBridge, sensors: NewtonSensorM
 def run_newton(config: SimulationConfig, ros_args: list[str] | None = None):
     rclpy.init(args=ros_args)
     model_path = config.resolved_robot_description()
+    scene_path = config.resolved_scene()
     viewer = None if config.headless else create_newton_viewer()
     ros = NewtonRosBridge(headless=config.headless, model_path=model_path)
     sensor_options = NewtonSensorOptions(
@@ -63,6 +64,7 @@ def run_newton(config: SimulationConfig, ros_args: list[str] | None = None):
     )
     sim = NewtonSimulation(
         model_path=model_path,
+        scene_path=scene_path,
         headless=config.headless,
         viewer=viewer,
         logger=ros.get_logger(),

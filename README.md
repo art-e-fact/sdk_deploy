@@ -124,7 +124,7 @@ This launches MuJoCo, the RL twist controller, Nav2, RTAB-Map, and RViz together
 
 ### Newton Flat-Terrain Simulation
 
-Newton support is available as a minimal robot-only simulation path. It loads the Lite3 USD description, adds a flat ground plane, runs the existing `rl_deploy` controller, subscribes to `/JOINTS_CMD`, and publishes `/JOINTS_DATA`, `/IMU_DATA`, and `/odom`. Sensors, procedural scenes, RTAB-Map, Nav2, and waypoint navigation are not launched in this mode.
+Newton support runs the existing `rl_deploy` controller, subscribes to `/JOINTS_CMD`, and publishes `/JOINTS_DATA`, `/IMU_DATA`, and `/odom`. Newton loads `robot_description` for both USD and MJCF robot models. When `scene` is set to a separate MJCF environment, that environment is added first; otherwise Newton falls back to a flat ground plane. RTAB-Map, Nav2, and waypoint navigation are not launched in this mode.
 
 ```bash
 ros2 launch lite3_sdk_deploy newton_simulation_ros2.launch.py control_type:=0 headless:=true
@@ -250,15 +250,9 @@ MuJoCo does not allow duplicate `default class` names across merged XMLs. Prefix
 ```
 Update every `class="visual"` / `class="collision"` reference in the file to match.
 
-**Step 3 – Create a top-level entry XML**
+**Step 3 – Use The Scene XML Directly**
 
-Create a new `Lite3_<yourscene>.xml` in `src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf`:
-```xml
-<mujoco model="Lite3_yourscene">
-    <include file="./Lite3.xml"/>
-    <include file="./your_scene.xml"/>
-</mujoco>
-```
+Scene XMLs are now environment-only. Do not include `Lite3.xml` in the scene file; the simulator loads the robot separately from `robot_description`. Update or create a simulation YAML that sets `scene` to your custom scene XML path.
 
 **Step 4 – Build and run**
 
@@ -273,7 +267,7 @@ ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py \
 where `my_scene_simulation.yaml` contains:
 
 ```yaml
-scene: Lite3_yourscene.xml
+scene: your_scene.xml
 ```
 
 

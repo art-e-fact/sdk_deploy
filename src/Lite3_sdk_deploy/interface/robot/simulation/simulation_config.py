@@ -18,7 +18,8 @@ except Exception:  # pragma: no cover - source-tree fallback handles this
 
 
 PACKAGE_NAME = "lite3_sdk_deploy"
-DEFAULT_MODEL_URI = "package://lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/Lite3.xml"
+DEFAULT_SCENE_URI = "package://lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/stairs_floors.xml"
+DEFAULT_ROBOT_DESCRIPTION_URI = "package://lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/Lite3.xml"
 DEFAULT_USD_URI = "package://lite3_sdk_deploy/Lite3_description/Lite3_usd/Lite3.usd"
 DEFAULT_CONFIG_RELATIVE_PATH = Path("config") / "simulation.yaml"
 
@@ -104,8 +105,8 @@ class SensorsConfig:
 @dataclass
 class SimulationConfig:
 	simulator: str = "newton"
-	scene: str = DEFAULT_MODEL_URI
-	robot_description: str = DEFAULT_MODEL_URI
+	scene: str = DEFAULT_SCENE_URI
+	robot_description: str = DEFAULT_ROBOT_DESCRIPTION_URI
 	headless: bool = True
 	use_procedural_scene: bool = False
 	procedural_env_seed: int = -1
@@ -127,8 +128,11 @@ class SimulationConfig:
 		data = _deep_merge(data, _unflatten(overrides))
 		return self.from_dict(data)
 
-	def resolved_scene(self) -> str:
-		return str(resolve_path(self.scene))
+	def resolved_scene(self) -> str | None:
+		raw = str(self.scene).strip()
+		if not raw:
+			return None
+		return str(resolve_path(raw))
 
 	def resolved_robot_description(self) -> str:
 		return str(resolve_path(self.robot_description))
@@ -139,15 +143,16 @@ class SimulationConfig:
 		if simulator not in {"newton", "mujoco"}:
 			errors.append("simulator must be 'newton' or 'mujoco'")
 
-		scene_path = resolve_path(self.scene, must_exist=False)
+		scene_value = str(self.scene).strip()
+		scene_path = resolve_path(scene_value, must_exist=False) if scene_value else None
 		robot_path = resolve_path(self.robot_description, must_exist=False)
-		if scene_path.suffix.lower() not in {".xml", ".mjcf"}:
+		if scene_path is not None and scene_path.suffix.lower() not in {".xml", ".mjcf"}:
 			errors.append("scene must be an MJCF/XML file")
 		if robot_path.suffix.lower() == ".usd" and simulator != "newton":
 			errors.append("USD robot_description is only supported by the Newton simulator")
 		if robot_path.suffix.lower() not in {".xml", ".mjcf", ".usd"}:
 			errors.append("robot_description must be an MJCF/XML or USD file")
-		if not scene_path.exists():
+		if scene_path is not None and not scene_path.exists():
 			errors.append(f"scene does not exist: {scene_path}")
 		if not robot_path.exists():
 			errors.append(f"robot_description does not exist: {robot_path}")

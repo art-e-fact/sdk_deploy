@@ -18,7 +18,7 @@ from sensors.newton.mid360_lidar_sensor import NewtonMid360LidarSensor
 NUM_DOFS = 12
 BASE_DOF_COUNT = 6
 FLOATING_BASE_Q_SIZE = 7
-DT = 0.001
+DT = 0.004
 ROS_SPIN_EVERY_STEPS = 1
 PUBLISH_EVERY_STEPS = 5
 ODOM_EVERY_STEPS = 20
@@ -87,8 +87,9 @@ def warp_to_numpy(array, fallback_size: int) -> np.ndarray:
 
 
 class NewtonSimulation:
-    def __init__(self, model_path: str, headless: bool = True, viewer=None, logger=None, sensor_options=None):
+    def __init__(self, model_path: str, scene_path: str | None = None, headless: bool = True, viewer=None, logger=None, sensor_options=None):
         self.model_path = model_path
+        self.scene_path = scene_path
         self.headless = headless
         self.viewer = None if headless else viewer
         self.logger = logger
@@ -104,7 +105,7 @@ class NewtonSimulation:
         self.tau_ff = np.zeros(NUM_DOFS, dtype=np.float32)
         self.last_tau = np.zeros(NUM_DOFS, dtype=np.float32)
 
-        self.model, self.solver, self.state_0, self.state_1, self.control = self._build_newton_model(model_path)
+        self.model, self.solver, self.state_0, self.state_1, self.control = self._build_newton_model(model_path, scene_path)
         self.contacts = self._create_contacts()
         self.graph = None
         self.use_cuda_graph = False
@@ -116,6 +117,8 @@ class NewtonSimulation:
 
         self._setup_cuda_graph()
         self._log_info(f"Newton Lite3 simulation loaded: {self.model_path}")
+        if self.scene_path is not None:
+            self._log_info(f"Newton environment scene loaded: {self.scene_path}")
         if self.viewer is not None:
             self._log_info("Newton viewer enabled because headless is false.")
         self._log_info("Optional sensors are managed by the ROS runner.")
@@ -187,7 +190,7 @@ class NewtonSimulation:
             self._log_debug(f"Newton contacts unavailable for viewer logging: {exc}")
             return None
 
-    def _build_newton_model(self, model_path: str):
+    def _build_newton_model(self, model_path: str, scene_path: str | None = None):
         if not os.path.exists(model_path):
             raise FileNotFoundError(f"Lite3 model description not found: {model_path}")
 
@@ -198,6 +201,8 @@ class NewtonSimulation:
         builder.default_shape_cfg.kd = 5.0e2
         builder.default_shape_cfg.kf = 1.0e3
         builder.default_shape_cfg.mu = 0.75
+
+        scene_loaded = self._add_environment_scene(builder, scene_path, model_path)
 
         if Path(model_path).suffix.lower() == ".xml":
             builder.add_mjcf(
@@ -222,7 +227,8 @@ class NewtonSimulation:
 
         self._init_sensor_visuals(builder)
         builder.approximate_meshes("convex_hull")
-        builder.add_ground_plane()
+        if not scene_loaded:
+            builder.add_ground_plane()
 
         builder.joint_q[:3] = [-5.0, 0.0, 0.43]
         builder.joint_q[3:7] = [0.0, 0.0, 0.0, 1.0]
@@ -244,6 +250,27 @@ class NewtonSimulation:
         newton.eval_fk(model, state_0.joint_q, state_0.joint_qd, state_0)
         newton.eval_fk(model, state_1.joint_q, state_1.joint_qd, state_1)
         return model, solver, state_0, state_1, control
+
+    def _add_environment_scene(self, builder, scene_path: str | None, model_path: str) -> bool:
+        if not scene_path:
+            return False
+
+        scene_file = Path(scene_path)
+        if scene_file.resolve() == Path(model_path).resolve():
+            return False
+        if scene_file.suffix.lower() not in {".xml", ".mjcf"}:
+            return False
+
+        builder.add_mjcf(
+            str(scene_file),
+            xform=wp.transform(wp.vec3(0.0, 0.0, 0.0)),
+            collapse_fixed_joints=True,
+            enable_self_collisions=False,
+            parse_visuals=True,
+            parse_meshes=True,
+            parse_sites=False,
+        )
+        return True
 
     def _init_sensor_visuals(self, builder):
         options = self.sensor_options
