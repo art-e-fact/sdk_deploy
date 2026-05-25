@@ -1,6 +1,7 @@
 mujoco
 scipy
 numpy
+pytest
 PyYAML
 empy==3.3.4
 catkin-pkg

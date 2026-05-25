@@ -169,4 +169,9 @@ install(DIRECTORY
   DESTINATION share/${PROJECT_NAME}
 )
 
+if(BUILD_TESTING)
+  find_package(ament_cmake_pytest REQUIRED)
+  ament_add_pytest_test(test_simulation_sensors test/test_simulation_sensors.py TIMEOUT 240)
+endif()
+
 ament_package()
