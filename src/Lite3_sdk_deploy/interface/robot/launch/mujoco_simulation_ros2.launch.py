@@ -18,13 +18,23 @@ def _mode_simulation_config(package_share: str, mode: int) -> str:
     return f"{package_share}/config/simulations/mujoco_rgbd_lidar.yaml"
 
 
-def _uses_procedural_scene(config_path: str) -> bool:
+def _as_bool(value, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _configured_scene(config_path: str) -> str:
     try:
         with open(config_path, "r", encoding="utf-8") as stream:
             data = yaml.safe_load(stream) or {}
     except OSError:
-        return False
-    return bool(data.get("use_procedural_scene", False))
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    return str(data.get("scene", "")).strip()
 
 
 def launch_setup(context, *args, **kwargs):
@@ -37,13 +47,22 @@ def launch_setup(context, *args, **kwargs):
     use_sim_time = LaunchConfiguration("use_sim_time")
     database_path = LaunchConfiguration("database_path")
     scene_id = int(LaunchConfiguration('scene_id').perform(context))
-    use_procedural_scene = LaunchConfiguration('use_procedural_scene').perform(context).lower() == 'true'
+    scene = LaunchConfiguration('scene').perform(context).strip()
     procedural_env_seed = LaunchConfiguration('procedural_env_seed')
     xml_path = LaunchConfiguration('xml').perform(context).strip()
-    effective_use_procedural_scene = use_procedural_scene or scene_id == 1
 
     nav2_package_share = FindPackageShare("nav2_bringup").perform(context)
     lite3_package_share = FindPackageShare("lite3_sdk_deploy").perform(context)
+    selected_config = simulation_config or _mode_simulation_config(lite3_package_share, mode)
+
+    if not scene:
+        if xml_path:
+            scene = f"src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/{xml_path}"
+        elif scene_id == 1:
+            scene = "procedural://blocks"
+        else:
+            scene = _configured_scene(selected_config)
+    is_procedural_scene = scene.startswith("procedural://")
 
     nav2_launch = (
         f"{nav2_package_share}"
@@ -65,6 +84,9 @@ def launch_setup(context, *args, **kwargs):
         rtabmap_mode = "rgbd_lidar"
         rviz_filepath = f"{lite3_package_share}/config/mapping_rgbd_lidar_costmaps.rviz"
 
+    enable_lidar = mode in (0, 2)
+    enable_depth = mode in (1, 2)
+    enable_color = enable_depth
 
     enable_pointcloud = LaunchConfiguration('enable_pointcloud').perform(context).lower() == 'true'
 
@@ -84,21 +106,19 @@ def launch_setup(context, *args, **kwargs):
     else:
         rl_deploy_args = ["--gamepad"]
 
-    ## scene
-    mujoco_simulation_ros2_params = {
-        "enable_lidar": enable_lidar,
-        "enable_depth": enable_depth,
-        "enable_color": enable_color,
-        "enable_pointcloud": enable_pointcloud,
-        "use_procedural_scene": effective_use_procedural_scene,
-        "procedural_env_seed": procedural_env_seed,
-    }
-    mujoco_simulation_ros2_args = []
-    if xml_path:
-        xml_path = f"src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/{xml_path}"
-        mujoco_simulation_ros2_args = ["--xml", xml_path]
+    start_simulation_args = [
+        '--config', selected_config,
+        '--set', f'scene={scene}',
+        '--set', f'sensors.lidar_2d.enabled={str(enable_lidar).lower()}',
+        '--set', f'sensors.realsense.enable_depth={str(enable_depth).lower()}',
+        '--set', f'sensors.realsense.enable_color={str(enable_color).lower()}',
+        '--set', f'sensors.realsense.enable_pointcloud={str(enable_pointcloud).lower()}',
+    ]
+    procedural_env_seed_value = str(procedural_env_seed.perform(context)).strip()
+    if procedural_env_seed_value:
+        start_simulation_args.extend(['--set', f'procedural_env_seed={procedural_env_seed_value}'])
 
-    if not effective_use_procedural_scene:
+    if not is_procedural_scene:
         rtabmap_args["max_ground_height"] = '0.3'
         rtabmap_args["max_ground_angle"] = '60'
 
@@ -108,7 +128,7 @@ def launch_setup(context, *args, **kwargs):
             package='lite3_sdk_deploy', 
             executable='start_simulation.py',
             output='screen',
-            arguments=['--config', selected_config],
+            arguments=start_simulation_args,
         ),
 
         # RL controller
@@ -192,8 +212,8 @@ def generate_launch_description():
         ),
 
         DeclareLaunchArgument(
-            'use_procedural_scene', default_value='false',
-            description='Generate the MuJoCo environment procedurally at runtime.'
+            'scene', default_value='',
+            description='Override the scene path or set a procedural scene URI such as procedural://blocks.'
         ),
 
         DeclareLaunchArgument(
@@ -204,6 +224,11 @@ def generate_launch_description():
         DeclareLaunchArgument(
             'xml', default_value='',
             description='Top-level MuJoCo XML scene file name from src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf.'
+        ),
+
+        DeclareLaunchArgument(
+            'simulation_config', default_value='',
+            description='Optional simulation YAML config path. Defaults to the mode-specific config when empty.'
         ),
 
         OpaqueFunction(function=launch_setup)

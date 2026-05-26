@@ -1,32 +1,44 @@
+import yaml
+
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
-from launch.conditions import IfCondition
-from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 
+def _as_bool(value, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _load_simulation_config(path: str) -> dict:
+    if not path:
+        return {}
+    try:
+        with open(path, "r", encoding="utf-8") as stream:
+            data = yaml.safe_load(stream) or {}
+    except OSError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 def launch_setup(context, *args, **kwargs):
-    scene_type = LaunchConfiguration('scene_type')
-    procedural_env_seed = LaunchConfiguration('procedural_env_seed')
-    headless = LaunchConfiguration('headless')
+    simulation_config_path = LaunchConfiguration('simulation_config').perform(context).strip()
+    simulation_config = _load_simulation_config(simulation_config_path)
+    headless = _as_bool(simulation_config.get('headless'), True)
     use_rviz = LaunchConfiguration('use_rviz')
-
-    enable_lidar = LaunchConfiguration('enable_lidar')
-    enable_mid360 = LaunchConfiguration('enable_mid360')
-    enable_depth = LaunchConfiguration('enable_depth')
-    enable_color = LaunchConfiguration('enable_color')
-    enable_pointcloud = LaunchConfiguration('enable_pointcloud')
     enable_heightmap = LaunchConfiguration('enable_heightmap')
-    mid360_mount_pitch = LaunchConfiguration('mid360_mount_pitch')
-    mid360_mount_offset_x = LaunchConfiguration('mid360_mount_offset_x')
-    enable_follow_camera = LaunchConfiguration('enable_follow_camera')
-    follow_camera_video_path = LaunchConfiguration('follow_camera_video_path')
-
-    enable_mid360_value = enable_mid360.perform(context).lower() == 'true'
-    enable_depth_value = enable_depth.perform(context).lower() == 'true'
-    enable_pointcloud_value = enable_pointcloud.perform(context).lower() == 'true'
     enable_heightmap_value = enable_heightmap.perform(context).lower() == 'true'
+
+    sensors = simulation_config.get('sensors') or {}
+    realsense = sensors.get('realsense') or {}
+    enable_mid360_value = _as_bool((sensors.get('mid360') or {}).get('enabled'), False)
+    enable_depth_value = _as_bool(realsense.get('enable_depth'), False)
+    enable_pointcloud_value = _as_bool(realsense.get('enable_pointcloud'), False)
 
     use_keyboard_teleop = LaunchConfiguration('use_keyboard_teleop')
     use_joy_teleop = LaunchConfiguration('use_joy_teleop')
@@ -56,22 +68,9 @@ def launch_setup(context, *args, **kwargs):
     actions = [
         Node(
             package='lite3_sdk_deploy',
-            executable='mujoco_simulation_ros2.py',
+            executable='start_simulation.py',
             output='screen',
-            parameters=[{
-                'scene_type': scene_type,
-                'procedural_env_seed': procedural_env_seed,
-                'headless': headless,
-                'enable_lidar': enable_lidar,
-                'enable_mid360': enable_mid360,
-                'enable_depth': enable_depth,
-                'enable_color': enable_color,
-                'enable_pointcloud': enable_pointcloud,
-                'mid360_mount_pitch': mid360_mount_pitch,
-                'mid360_mount_offset_x': mid360_mount_offset_x,
-                'enable_follow_camera': enable_follow_camera,
-                'follow_camera_video_path': follow_camera_video_path,
-            }],
+            arguments=['--config', simulation_config_path],
         ),
     ]
 
@@ -155,87 +154,66 @@ def launch_setup(context, *args, **kwargs):
             output='screen',
             arguments=['--twist'],
         ),
-        Node(
-            package='teleop_twist_keyboard',
-            executable='teleop_twist_keyboard',
-            name='teleop_twist_keyboard',
-            output='screen',
-            remappings=[('cmd_vel', '/cmd_vel')],
-            emulate_tty=True,
-            condition=IfCondition(
-                PythonExpression([
-                    "'", use_keyboard_teleop, "' == 'true' and '", headless, "' != 'true'"
-                ])
-            ),
-        ),
-        Node(
-            package='joy',
-            executable='joy_node',
-            name='joy_node',
-            output='screen',
-            condition=IfCondition(LaunchConfiguration('use_joy_teleop')),
-        ),
-        Node(
-            package='teleop_twist_joy',
-            executable='teleop_node',
-            name='teleop_twist_joy_node',
-            output='screen',
-            parameters=[joy_config],
-            remappings=[('cmd_vel', '/cmd_vel')],
-            condition=IfCondition(LaunchConfiguration('use_joy_teleop')),
-        ),
-        Node(
-            package='rviz2',
-            executable='rviz2',
-            name='rviz2',
-            output='screen',
-            arguments=['-d', rviz_config],
-            condition=IfCondition(
-                PythonExpression([
-                    "'", use_rviz, "' == 'true' and '", headless, "' != 'true'"
-                ])
-            ),
-        ),
     ])
+
+    if use_keyboard_teleop.perform(context).lower() == 'true' and not headless:
+        actions.append(
+            Node(
+                package='teleop_twist_keyboard',
+                executable='teleop_twist_keyboard',
+                name='teleop_twist_keyboard',
+                output='screen',
+                remappings=[('cmd_vel', '/cmd_vel')],
+                emulate_tty=True,
+            )
+        )
+
+    if use_joy_teleop.perform(context).lower() == 'true':
+        actions.extend([
+            Node(
+                package='joy',
+                executable='joy_node',
+                name='joy_node',
+                output='screen',
+            ),
+            Node(
+                package='teleop_twist_joy',
+                executable='teleop_node',
+                name='teleop_twist_joy_node',
+                output='screen',
+                parameters=[joy_config],
+                remappings=[('cmd_vel', '/cmd_vel')],
+            ),
+        ])
+
+    if use_rviz.perform(context).lower() == 'true' and not headless:
+        actions.append(
+            Node(
+                package='rviz2',
+                executable='rviz2',
+                name='rviz2',
+                output='screen',
+                arguments=['-d', rviz_config],
+            )
+        )
 
     return actions
 
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument('scene_type', default_value='railroad'),
-        DeclareLaunchArgument('procedural_env_seed', default_value='123'),
-        DeclareLaunchArgument('headless', default_value='false'),
+        DeclareLaunchArgument(
+            'simulation_config',
+            default_value=PathJoinSubstitution([
+                FindPackageShare('lite3_sdk_deploy'), 'config', 'simulations', 'mujoco_railroad_mid360.yaml'
+            ]),
+            description='Path to the Lite3 simulation YAML config to run',
+        ),
         DeclareLaunchArgument('use_rviz', default_value='true'),
-        DeclareLaunchArgument('enable_lidar', default_value='false'),
-        DeclareLaunchArgument('enable_mid360', default_value='true'),
-        DeclareLaunchArgument('enable_depth', default_value='false'),
-        DeclareLaunchArgument('enable_color', default_value='false'),
-        DeclareLaunchArgument('enable_pointcloud', default_value='false'),
-        DeclareLaunchArgument(
-            'mid360_mount_pitch',
-            default_value='30.0',
-            description='Absolute Mid360 mount pitch in degrees about the torso-local Y axis',
-        ),
-        DeclareLaunchArgument(
-            'mid360_mount_offset_x',
-            default_value='0.0',
-            description='Additional Mid360 fore-aft offset in meters along the torso-local X axis',
-        ),
         DeclareLaunchArgument(
             'enable_heightmap',
             default_value='true',
             description='Launch the simple local heightmap, rail detector, and rail follower nodes',
-        ),
-        DeclareLaunchArgument(
-            'enable_follow_camera',
-            default_value='false',
-            description='Record an offscreen follow-camera video from the MuJoCo simulation',
-        ),
-        DeclareLaunchArgument(
-            'follow_camera_video_path',
-            default_value='/tmp/lite3_follow_camera.mp4',
-            description='Output path for the optional follow-camera video',
         ),
         DeclareLaunchArgument(
             'follow_distance',

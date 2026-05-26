@@ -29,6 +29,8 @@ colcon build --symlink-install --cmake-args -DBUILD_PLATFORM=x86
 source install/setup.bash
 ```
 
+Run `colcon build` from a shell with ROS sourced but without the simulation venv activated.
+
 ### Python venv (for simulation only)
 
 The MuJoCo simulation requires Python packages not available via rosdep. Set up a venv once:
@@ -41,6 +43,8 @@ pip install -r requirements.txt
 ```
 
 Activate the venv before running simulation commands.
+
+Inside the devcontainer, the first post-create setup creates this `venv/` automatically and marks it with `COLCON_IGNORE` so ROS builds do not traverse it.
 
 
 ## RTAB-Map SLAM + Nav2 Autonomous Navigation

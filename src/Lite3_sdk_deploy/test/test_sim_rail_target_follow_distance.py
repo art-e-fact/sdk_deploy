@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import time
 import unittest
+import yaml
 
 from ament_index_python.packages import get_package_share_directory
 from artefacts_toolkit.config import get_artefacts_params
@@ -20,6 +21,7 @@ TEST_TIMEOUT_SEC = 60.0
 MAX_ODOM_STEP_M = 1.0
 OUTPUT_FOLDER = Path(os.getenv("ARTEFACTS_SCENARIO_UPLOAD_DIR", "./"))
 TEST_VIDEO_PATH = OUTPUT_FOLDER / 'lite3_rail_target_follow_distance.mp4'
+TEST_CONFIG_PATH = OUTPUT_FOLDER / 'lite3_rail_target_follow_distance.yaml'
 
 try:
     artefacts_params = get_artefacts_params()
@@ -30,10 +32,33 @@ except Exception:
 min_distance_to_travel = float(artefacts_params.get('min_distance_to_travel', 1.5))
 
 
+def _write_simulation_config() -> None:
+    OUTPUT_FOLDER.mkdir(parents=True, exist_ok=True)
+    TEST_CONFIG_PATH.write_text(
+        yaml.safe_dump({
+            'simulator': 'mujoco',
+            'scene': 'procedural://railroad',
+            'headless': False,
+            'procedural_env_seed': 123,
+            'sensors': {
+                'mid360': {
+                    'enabled': True,
+                },
+                'follow_camera': {
+                    'enabled': True,
+                    'video_path': str(TEST_VIDEO_PATH),
+                },
+            },
+        }, sort_keys=False),
+        encoding='utf-8',
+    )
+
+
 @pytest.mark.launch_test
 def generate_test_description():
     if TEST_VIDEO_PATH.exists():
         TEST_VIDEO_PATH.unlink()
+    _write_simulation_config()
 
     launch_file = (
         get_package_share_directory('lite3_sdk_deploy')
@@ -43,24 +68,15 @@ def generate_test_description():
     rail_follow_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(launch_file),
         launch_arguments={
-            'scene_type': 'railroad',
-            'procedural_env_seed': '123',
-            'headless': 'false',
+            'simulation_config': str(TEST_CONFIG_PATH),
             'use_rviz': 'false',
             'use_keyboard_teleop': 'false',
             'use_joy_teleop': 'false',
-            'enable_lidar': 'false',
-            'enable_mid360': 'true',
-            'enable_depth': 'false',
-            'enable_color': 'false',
-            'enable_pointcloud': 'false',
             'enable_heightmap': 'true',
             'follow_distance': '1.5',
             'min_linear_x': '0.35',
             'max_linear_x': '0.45',
             'stale_timeout_sec': '0.75',
-            'enable_follow_camera': 'true',
-            'follow_camera_video_path': str(TEST_VIDEO_PATH),
             **artefacts_params,
         }.items(),
     )

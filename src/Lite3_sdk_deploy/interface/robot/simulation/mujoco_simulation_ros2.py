@@ -25,8 +25,10 @@ import mujoco.viewer
 
 from sensors.mujoco.lidar_sensor import LidarSensor
 from sensors.mujoco.depth_sensor import DepthSensor
+from sensors.mujoco.follow_camera_recorder import FollowCameraRecorder
 from sensors.mujoco.mid360_lidar_sensor import Mid360LidarSensor
-from procedural_scene_generator import build_procedural_spec
+from scenes.procedural_railroad_scene import build_railroad_spec
+from scenes.procedural_scene_generator import build_procedural_spec
 from simulation_config import SimulationConfig
 
 import rclpy
@@ -59,10 +61,6 @@ def _resolve_resource_path(*parts: str) -> str:
 
 # Define the default XML path relative to the Python file
 XML_PATH = _resolve_resource_path("Lite3_description", "lite3_mjcf", "mjcf", "Lite3_stair.xml")
-
-# Robot-only MJCF used when the full scene is generated procedurally in Python.
-LITE3_ROBOT_XML_PATH = _resolve_resource_path("Lite3_description", "lite3_mjcf", "mjcf", "Lite3.xml")
-
 
 USE_VIEWER = True
 
@@ -135,7 +133,7 @@ class MuJoCoSimulationNode(Node):
         if xml_path:
             config = config.with_overrides({"scene": xml_path})
 
-        self.declare_parameter('use_procedural_scene', config.use_procedural_scene)
+        self.declare_parameter('scene', config.scene)
         self.declare_parameter('procedural_env_seed', config.procedural_env_seed)
         self.declare_parameter('headless', config.headless)
         self.declare_parameter('enable_lidar', config.sensors.lidar_2d.enabled)
@@ -143,10 +141,12 @@ class MuJoCoSimulationNode(Node):
         self.declare_parameter('enable_depth', config.sensors.realsense.enable_depth)
         self.declare_parameter('enable_color', config.sensors.realsense.enable_color)
         self.declare_parameter('enable_pointcloud', config.sensors.realsense.enable_pointcloud)
+        self.declare_parameter('enable_follow_camera', config.sensors.follow_camera.enabled)
+        self.declare_parameter('follow_camera_video_path', config.sensors.follow_camera.video_path)
 
         config = config.with_overrides({
             "simulator": "mujoco",
-            "use_procedural_scene": _as_bool(self.get_parameter('use_procedural_scene').value, config.use_procedural_scene),
+            "scene": str(self.get_parameter('scene').value).strip(),
             "procedural_env_seed": int(self.get_parameter('procedural_env_seed').value),
             "headless": _as_bool(self.get_parameter('headless').value, config.headless),
             "sensors.lidar_2d.enabled": _as_bool(self.get_parameter('enable_lidar').value, config.sensors.lidar_2d.enabled),
@@ -154,12 +154,14 @@ class MuJoCoSimulationNode(Node):
             "sensors.realsense.enable_depth": _as_bool(self.get_parameter('enable_depth').value, config.sensors.realsense.enable_depth),
             "sensors.realsense.enable_color": _as_bool(self.get_parameter('enable_color').value, config.sensors.realsense.enable_color),
             "sensors.realsense.enable_pointcloud": _as_bool(self.get_parameter('enable_pointcloud').value, config.sensors.realsense.enable_pointcloud),
+            "sensors.follow_camera.enabled": _as_bool(self.get_parameter('enable_follow_camera').value, config.sensors.follow_camera.enabled),
+            "sensors.follow_camera.video_path": str(self.get_parameter('follow_camera_video_path').value).strip(),
         })
         errors = config.validate()
         if errors:
             raise ValueError("Invalid simulation config: " + "; ".join(errors))
 
-        use_procedural_scene = config.use_procedural_scene
+        procedural_scene = config.procedural_scene_name()
         configured_seed = config.procedural_env_seed
         headless = config.headless
         enable_lidar = config.sensors.lidar_2d.enabled
@@ -172,11 +174,11 @@ class MuJoCoSimulationNode(Node):
         self.procedural_waypoints_msg = None
         self.scene_start_pose = (-5.0, 0.0, 0.0)
         scene_meta: dict = {}
+        robot_xml_path = config.resolved_robot_description()
+        if not os.path.isfile(robot_xml_path):
+            raise FileNotFoundError(f"Cannot find Lite3 robot MJCF: {robot_xml_path}")
 
-        if use_procedural_scene:
-            robot_xml_path = config.resolved_robot_description()
-            if not os.path.isfile(robot_xml_path):
-                raise FileNotFoundError(f"Cannot find Lite3 robot MJCF: {robot_xml_path}")
+        if procedural_scene == "blocks":
             scene_seed = configured_seed if configured_seed >= 0 else random.randint(0, 2**31 - 1)
             spec, scene_meta = build_procedural_spec(
                 robot_xml_path,
@@ -194,31 +196,24 @@ class MuJoCoSimulationNode(Node):
                 self.get_logger().info(
                     f"[INFO] Publishing mission with {len(self.procedural_waypoints_msg.poses)} ordered waypoints on /procedural_waypoints"
                 )
-        elif scene_type == "railroad":
-            if not os.path.isfile(LITE3_ROBOT_XML_PATH):
-                raise FileNotFoundError(f"Cannot find Lite3 robot MJCF: {LITE3_ROBOT_XML_PATH}")
+        elif procedural_scene == "railroad":
             scene_seed = configured_seed if configured_seed >= 0 else random.randint(0, 2**31 - 1)
             spec, scene_meta = build_railroad_spec(
-                LITE3_ROBOT_XML_PATH,
+                robot_xml_path,
                 seed=scene_seed,
-                n_roads=1,
-                terrain=None,
             )
             self.scene_start_pose = tuple(scene_meta.get("robot_start_pose", self.scene_start_pose))
             self.get_logger().info(
                 f"[INFO] Railroad scene enabled (robot=Lite3.xml, world built in Python): "
                 f"seed={scene_meta['seed']}, roads={scene_meta['roads']}, "
-                f"mainline_waypoints={len(scene_meta['mission_xy'])}"
+                f"mainline_waypoints={len(scene_meta.get('mission_xy', []))}"
             )
             self.procedural_waypoints_msg = self._build_waypoint_pose_array(scene_meta)
             if self.procedural_waypoints_msg is not None:
                 self.get_logger().info(
-                    f"[INFO] Publishing main line mission with {len(self.procedural_waypoints_msg.poses)} ordered waypoints on /procedural_waypoints"
+                    f"[INFO] Publishing mission with {len(self.procedural_waypoints_msg.poses)} ordered waypoints on /procedural_waypoints"
                 )
         else:
-            robot_xml_path = config.resolved_robot_description()
-            if not os.path.isfile(robot_xml_path):
-                raise FileNotFoundError(f"Cannot find Lite3 robot MJCF: {robot_xml_path}")
             scene_path = config.resolved_scene()
             spec = _build_static_spec(scene_path, robot_xml_path)
             if scene_path:
@@ -308,9 +303,6 @@ class MuJoCoSimulationNode(Node):
         self.mid360 = Mid360LidarSensor(self.model, self.data, self, self.viewer, config=config.sensors.mid360)
         self.mid360_step_interval = max(1, int(1.0 / (config.sensors.mid360.frequency_hz * DT)))
 
-        self.mid360 = Mid360LidarSensor(self.model, self.data, self, self.viewer, enabled=enable_mid360)
-        self.mid360_step_interval = int(1.0 / (MID360_FREQUENCY_HZ * DT))
-
         # Depth camera sensor (RealSense D435i)
         self.depth = DepthSensor(
             self.model, self.data, self, self.viewer,
@@ -322,10 +314,9 @@ class MuJoCoSimulationNode(Node):
             self.model,
             self.data,
             self,
-            enabled=enable_follow_camera,
-            video_path=follow_camera_video_path,
+            config=config.sensors.follow_camera,
         )
-        self.follow_camera_step_interval = max(1, int(round(1.0 / (FOLLOW_CAMERA_FPS * DT))))
+        self.follow_camera_step_interval = max(1, int(round(1.0 / (config.sensors.follow_camera.fps * DT))))
 
         # Publish all static transforms in one call
         self._publish_static_transforms()
@@ -513,7 +504,7 @@ class MuJoCoSimulationNode(Node):
                     if step % self.depth_step_interval == 0:
                         self.depth.update(stamp)
 
-                    if step % self.follow_camera_step_interval == 0:
+                    if self.follow_camera.enabled and step % self.follow_camera_step_interval == 0:
                         self.follow_camera.update()
 
                     # Viewer
@@ -648,12 +639,6 @@ def main():
     if errors:
         raise SystemExit("Invalid simulation config:\n- " + "\n- ".join(errors))
     run_mujoco(config, ros_args)
-
-    rclpy.init(args=ros_args)
-    sim_node = MuJoCoSimulationNode(xml_path=xml_path)
-    sim_node.start()
-    sim_node.destroy_node()
-    rclpy.shutdown()
 
 if __name__ == "__main__":
     main()

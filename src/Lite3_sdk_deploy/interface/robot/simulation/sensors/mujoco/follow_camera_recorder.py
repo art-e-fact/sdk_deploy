@@ -12,16 +12,7 @@ import imageio.v2 as imageio
 import mujoco
 import numpy as np
 
-
-FOLLOW_CAMERA_FPS = 20.0
-FOLLOW_CAMERA_WIDTH = 640
-FOLLOW_CAMERA_HEIGHT = 480
-FOLLOW_CAMERA_DISTANCE_M = 4.0
-FOLLOW_CAMERA_ELEVATION_DEG = -18.0
-FOLLOW_CAMERA_AZIMUTH_OFFSET_DEG = 60.0
-FOLLOW_CAMERA_TARGET_HEIGHT_M = 0.55
-FOLLOW_CAMERA_SMOOTHING = 0.08
-FOLLOW_CAMERA_QUALITY = 8
+from simulation_config import FollowCameraConfig
 
 
 class FollowCameraRecorder:
@@ -30,15 +21,15 @@ class FollowCameraRecorder:
         model: mujoco.MjModel,
         data: mujoco.MjData,
         node,
-        enabled: bool = False,
-        video_path: str = "",
+        config: FollowCameraConfig | None = None,
     ):
         self.model = model
         self.data = data
         self.node = node
-        self.enabled = bool(enabled)
-        self.video_path = str(video_path).strip()
-        self.fps = FOLLOW_CAMERA_FPS
+        self.config = config or FollowCameraConfig()
+        self.enabled = bool(self.config.enabled)
+        self.video_path = str(self.config.video_path).strip()
+        self.fps = float(self.config.fps)
         self.closed = True
         self.frame_count = 0
         self._lookat = None
@@ -59,26 +50,26 @@ class FollowCameraRecorder:
 
         self.renderer = mujoco.Renderer(
             model,
-            height=FOLLOW_CAMERA_HEIGHT,
-            width=FOLLOW_CAMERA_WIDTH,
+            height=self.config.height,
+            width=self.config.width,
         )
         self.camera = mujoco.MjvCamera()
         mujoco.mjv_defaultFreeCamera(model, self.camera)
         self.camera.type = mujoco.mjtCamera.mjCAMERA_FREE
-        self.camera.distance = FOLLOW_CAMERA_DISTANCE_M
-        self.camera.elevation = FOLLOW_CAMERA_ELEVATION_DEG
+        self.camera.distance = self.config.distance_m
+        self.camera.elevation = self.config.elevation_deg
 
         self.writer = imageio.get_writer(
             self.video_path,
             fps=self.fps,
             codec="libx264",
-            quality=FOLLOW_CAMERA_QUALITY,
+            quality=self.config.quality,
             macro_block_size=16,
         )
         self.closed = False
         node.get_logger().info(
             f"[INFO] Follow camera recording enabled: {self.video_path} "
-            f"({FOLLOW_CAMERA_WIDTH}x{FOLLOW_CAMERA_HEIGHT} @ {self.fps:.1f} Hz)"
+            f"({self.config.width}x{self.config.height} @ {self.fps:.1f} Hz)"
         )
 
     def update(self):
@@ -107,17 +98,17 @@ class FollowCameraRecorder:
 
     def _update_camera(self):
         target = np.array(self.data.qpos[0:3], dtype=np.float64)
-        target[2] += FOLLOW_CAMERA_TARGET_HEIGHT_M
+        target[2] += self.config.target_height_m
         if self._lookat is None:
             self._lookat = target
         else:
-            alpha = float(np.clip(FOLLOW_CAMERA_SMOOTHING, 0.0, 1.0))
+            alpha = float(np.clip(self.config.smoothing, 0.0, 1.0))
             self._lookat = (1.0 - alpha) * self._lookat + alpha * target
 
         self.camera.lookat[:] = self._lookat
-        self.camera.distance = FOLLOW_CAMERA_DISTANCE_M
-        self.camera.elevation = FOLLOW_CAMERA_ELEVATION_DEG
-        self.camera.azimuth = self._robot_yaw_deg() + FOLLOW_CAMERA_AZIMUTH_OFFSET_DEG
+        self.camera.distance = self.config.distance_m
+        self.camera.elevation = self.config.elevation_deg
+        self.camera.azimuth = self._robot_yaw_deg() + self.config.azimuth_offset_deg
 
     def _robot_yaw_deg(self) -> float:
         w, x, y, z = self.data.qpos[3:7]
