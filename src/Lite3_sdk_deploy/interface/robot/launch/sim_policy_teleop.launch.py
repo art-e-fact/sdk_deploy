@@ -1,28 +1,19 @@
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, OpaqueFunction
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
 
 
+def _default_simulation_config(package_share: str) -> str:
+    return f"{package_share}/config/simulations/mujoco_procedural.yaml"
+
+
 def launch_setup(context, *args, **kwargs):
-    scene_type = LaunchConfiguration("scene_type")
-    procedural_env_seed = LaunchConfiguration("procedural_env_seed")
     headless = LaunchConfiguration("headless")
     use_rviz = LaunchConfiguration("use_rviz")
-
-    enable_lidar = LaunchConfiguration("enable_lidar")
-    enable_mid360 = LaunchConfiguration("enable_mid360")
-    enable_depth = LaunchConfiguration("enable_depth")
-    enable_color = LaunchConfiguration("enable_color")
-    enable_pointcloud = LaunchConfiguration("enable_pointcloud")
-    enable_heightmap = LaunchConfiguration("enable_heightmap")
-
-    enable_mid360_value = enable_mid360.perform(context).lower() == "true"
-    enable_depth_value = enable_depth.perform(context).lower() == "true"
-    enable_pointcloud_value = enable_pointcloud.perform(context).lower() == "true"
-    enable_heightmap_value = enable_heightmap.perform(context).lower() == "true"
+    simulation_config = LaunchConfiguration("simulation_config").perform(context).strip()
 
     use_keyboard_teleop = LaunchConfiguration("use_keyboard_teleop")
     use_joy_teleop = LaunchConfiguration("use_joy_teleop")
@@ -31,80 +22,20 @@ def launch_setup(context, *args, **kwargs):
         FindPackageShare("lite3_sdk_deploy"), "config", "f310_holonomic.yaml"
     ])
     rviz_config = PathJoinSubstitution([
-        FindPackageShare("lite3_sdk_deploy"), "config", "teleop.rviz"
+        FindPackageShare("lite3_sdk_deploy"), "config", "mapping_lidar.rviz"
     ])
+    package_share = FindPackageShare("lite3_sdk_deploy").perform(context)
+    headless_value = headless.perform(context).strip().lower()
+    selected_config = simulation_config or _default_simulation_config(package_share)
 
-    heightmap_cloud_topic = None
-    if enable_mid360_value:
-        heightmap_cloud_topic = "/mid360/points"
-    elif enable_depth_value and enable_pointcloud_value:
-        heightmap_cloud_topic = "/camera/depth/color/points"
-
-    actions = [
+    return [
         Node(
             package="lite3_sdk_deploy",
-            executable="mujoco_simulation_ros2.py",
+            executable="start_simulation.py",
             output="screen",
-            parameters=[{
-                "scene_type": scene_type,
-                "procedural_env_seed": procedural_env_seed,
-                "headless": headless,
-                "enable_lidar": enable_lidar,
-                "enable_mid360": enable_mid360,
-                "enable_depth": enable_depth,
-                "enable_color": enable_color,
-                "enable_pointcloud": enable_pointcloud,
-            }],
+            arguments=["--config", selected_config, *(["--set", f"headless={headless_value}"] if headless_value in {"true", "false"} else [])],
         ),
-    ]
 
-    if enable_heightmap_value and heightmap_cloud_topic is not None:
-        actions.append(
-            Node(
-                package="simple_local_heightmap",
-                executable="local_heightmap_node",
-                name="local_heightmap_node",
-                output="screen",
-                parameters=[{
-                    "cloud_topic": heightmap_cloud_topic,
-                    "map_frame": "odom",
-                    "robot_frame": "base_link",
-                    "resolution": 0.025,
-                    "length_x": 8.0,
-                    "length_y": 8.0,
-                    "front_clear_enabled": True,
-                    "front_clear_length": 1.5,
-                    "front_clear_width": 1.0,
-                    "front_clear_offset_x": 0.25,
-                    "front_stale_time_sec": 0.75,
-                }],
-            )
-        )
-        actions.append(
-            Node(
-                package="rail_inspector",
-                executable="rail_detector_node",
-                name="rail_detector_node",
-                output="screen",
-                parameters=[{
-                    "heightmap_topic": "/local_heightmap",
-                    "odom_topic": "/odom",
-                    "marker_topic": "/rail_detector/markers",
-                    "track_gauge": 1.067,
-                }],
-            )
-        )
-    elif enable_heightmap_value:
-        actions.append(
-            LogInfo(
-                msg=(
-                    "rail heightmap pipeline not started: enable_mid360:=true or "
-                    "enable_depth:=true enable_pointcloud:=true is required"
-                )
-            )
-        )
-
-    actions.extend([
         Node(
             package="lite3_sdk_deploy",
             executable="rl_deploy",
@@ -156,28 +87,14 @@ def launch_setup(context, *args, **kwargs):
                 ])
             ),
         ),
-    ])
-
-    return actions
+    ]
 
 
 def generate_launch_description():
     return LaunchDescription([
-        DeclareLaunchArgument("scene_type", default_value="shapes"),
-        DeclareLaunchArgument("procedural_env_seed", default_value="-1"),
-        DeclareLaunchArgument("headless", default_value="false"),
+        DeclareLaunchArgument("headless", default_value=""),
         DeclareLaunchArgument("use_rviz", default_value="true"),
-
-        DeclareLaunchArgument("enable_lidar", default_value="false"),
-        DeclareLaunchArgument("enable_mid360", default_value="false"),
-        DeclareLaunchArgument("enable_depth", default_value="false"),
-        DeclareLaunchArgument("enable_color", default_value="false"),
-        DeclareLaunchArgument("enable_pointcloud", default_value="false"),
-        DeclareLaunchArgument(
-            "enable_heightmap",
-            default_value="false",
-            description="Launch the simple local heightmap node for Mid360 testing",
-        ),
+        DeclareLaunchArgument("simulation_config", default_value=""),
 
         DeclareLaunchArgument(
             "use_keyboard_teleop",

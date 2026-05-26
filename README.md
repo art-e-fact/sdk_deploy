@@ -69,18 +69,18 @@ In RViz2: Set **2D Goal Pose** to send a navigation goal
 
 ### Optional: Procedural Scene (MuJoCo)
 
-By default, simulation uses the authored static scene. To generate the environment procedurally at runtime with the full launch stack, use:
+By default, `mujoco_simulation_ros2.launch.py` uses the authored static-scene presets. To switch the full launch stack to a procedural environment, pass a procedural simulation config:
 
 ```bash
 ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py \
-  mode:=2 control_type:=0 use_procedural_scene:=true
+  mode:=2 control_type:=0 \
+  simulation_config:=src/Lite3_sdk_deploy/config/simulations/mujoco_procedural_rgbd_lidar.yaml
 ```
 
-Optional seed for reproducible layouts:
+For a reproducible procedural seed, create a small custom YAML from that preset and set `procedural_env_seed` there.
 
 ```bash
-ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py \
-  mode:=2 control_type:=0 use_procedural_scene:=true procedural_env_seed:=1234
+cp src/Lite3_sdk_deploy/config/simulations/mujoco_procedural_rgbd_lidar.yaml /tmp/my_proc_scene.yaml
 ```
 
 Stand the robot with "z" then put into RL control mode with "c". Drive the robot around with keyboard controls (wasd) to build the map.
@@ -198,29 +198,47 @@ ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
 | `linear.y`    | Strafe left / right   | 0.5 m/s   |
 | `angular.z`   | Turn left / right     | 0.7 rad/s |
 
-
-## Simulated Sensors
-
-Sensor modules live in `src/Lite3_sdk_deploy/interface/robot/simulation/`:
-
-| Sensor | File | Key topics |
-|--------|------|------------|
-| 2D LiDAR (RPLiDAR A2M8) | `lidar_sensor.py` | `/scan` |
-| Depth camera (RealSense D435i) | `depth_sensor.py` | `/camera/depth/image_rect_raw`, `/camera/color/image_raw`, `/camera/depth/color/points` |
-
-Each module has **enable/disable flags** at the top of the file to skip expensive computation:
-
-```python
-# lidar_sensor.py
-ENABLE_LIDAR = True
-
-# depth_sensor.py
-ENABLE_DEPTH = True
-ENABLE_COLOR = False
-ENABLE_POINTCLOUD = False  # requires ENABLE_DEPTH
+Or use a teleop tool like `teleop_twist_keyboard` for manual control:
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
 ```
 
-Resolution (`WIDTH`/`HEIGHT`) and publish rate (`*_FREQUENCY_HZ`) are also configurable there.
+
+## Simulation Config
+
+Simulation startup uses the dataclass defaults from `interface/robot/simulation/simulation_config.py` when no config file is provided. You can launch the simulator stack without passing any YAML:
+
+```bash
+ros2 launch lite3_sdk_deploy simulation.launch.py
+```
+
+For a full reference of all available fields and their default values, see `src/Lite3_sdk_deploy/config/simulations/reference.yaml`.
+
+MuJoCo and the common launchfile modes now use small preset configs under `src/Lite3_sdk_deploy/config/simulations/`. For example:
+
+```bash
+ros2 launch lite3_sdk_deploy simulation.launch.py \
+  config:=src/Lite3_sdk_deploy/config/simulations/mujoco_rgbd_lidar.yaml
+```
+
+The higher-level launchfiles select these presets automatically and expose an optional `simulation_config:=...` override when a custom YAML is needed.
+
+Only `simulation.launch.py` exposes generic `simulation_overrides:=...` for targeted one-off changes without creating a new YAML. Use semicolon-separated dotted paths:
+
+```bash
+ros2 launch lite3_sdk_deploy simulation.launch.py \
+  config:=src/Lite3_sdk_deploy/config/simulations/mujoco_rgbd_lidar.yaml \
+  simulation_overrides:="headless=true;sensors.lidar_2d.visualize_rays=true"
+```
+
+Sensor enable flags and sensor tuning live under `sensors` in the YAML file:
+
+```bash
+ros2 launch lite3_sdk_deploy simulation.launch.py \
+  config:=/absolute/path/to/my_simulation.yaml
+```
+
+The default schema includes advanced topic, frame, camera, and mount-site fields with values matching the current simulated interfaces. Most users should only need the enable flags, paths, and rates.
 
 > **Note:** Currently, the color aligned depth topic is not published. In simulation, the two cameras are co-located so there is no need for alignment. We can publish the aligned depth topic to match how we interface with the real robot.
 
@@ -261,14 +279,14 @@ MuJoCo does not allow duplicate `default class` names across merged XMLs. Prefix
 ```
 Update every `class="visual"` / `class="collision"` reference in the file to match.
 
-**Step 3 – Create a top-level entry XML**
+**Step 3 – Use The Scene XML Directly**
 
-Create a new `Lite3_<yourscene>.xml` in `src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf`:
-```xml
-<mujoco model="Lite3_yourscene">
-    <include file="./Lite3.xml"/>
-    <include file="./your_scene.xml"/>
-</mujoco>
+Scene XMLs are now environment-only. Do not include `Lite3.xml` in the scene file; the simulator loads the robot separately from `robot_description`. Update or create a simulation YAML that sets `scene` to your custom scene XML path.
+
+Example `my_scene_simulation.yaml`:
+```yaml
+simulator: mujoco
+scene: package://lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/stairs_floors.xml
 ```
 
 **Step 4 – Build and run**
@@ -278,8 +296,58 @@ colcon build --packages-select lite3_sdk_deploy
 source install/setup.bash
 ros2 launch lite3_sdk_deploy mujoco_simulation_ros2.launch.py \
   mode:=2 control_type:=0 \
-  xml:=Lite3_yourscene.xml
+  simulation_config:=/absolute/path/to/my_scene_simulation.yaml
 ```
+
+where `my_scene_simulation.yaml` contains:
+
+```yaml
+scene: your_scene.xml
+```
+
+
+## DDDMR for Lite3 with Mid360 lidar (3D Mapping + 3D Navigation)
+
+### 0. Installation
+
+- Current support: ROS Humble
+- Please follow guide at: https://github.com/art-e-fact/dddmr_navigation
+
+### 1. Mapping mode
+
+- Launch:
+```
+ros2 launch lite3_sdk_deploy mujoco_simulation_ros2_dddrm.launch.py mode:=0
+```
+
+- (From another terminal) Save local map file:
+```
+ros2 service call /save_mapped_point_cloud std_srvs/srv/Empty
+```
+
+Note: The map will be saved into `/tmp/2026_xxx`, use this path when update navigation config file.
+
+### 2. Navigation mode
+
+- Modify config file: `src/Lite3_sdk_deploy/config/navigation_mid360s.yaml`:
+```
+...
+sub_maps:
+  ros__parameters:
+    pose_graph_dir: "/tmp/2026_xxx" 
+...
+```
+- Launch:
+```
+ros2 launch lite3_sdk_deploy mujoco_simulation_ros2_dddrm.launch.py mode:=1
+```
+- In Rviz, click on "3D pose estimate" -> set initial pose, then click on "3D goal pose" -> set target goal for navigation
+
+### Tunable config files:
+
+- `src/Lite3_sdk_deploy/config/mapping_mid360s.yaml`
+- `src/Lite3_sdk_deploy/config/navigation_mid360s.yaml`
+
 
 ---
 
