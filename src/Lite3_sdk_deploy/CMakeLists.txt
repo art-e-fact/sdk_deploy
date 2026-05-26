@@ -153,7 +153,6 @@ install(DIRECTORY
 )
 
 install(FILES
-  interface/robot/simulation/procedural_scene_generator.py
   interface/robot/simulation/simulation_config.py
   DESTINATION lib/${PROJECT_NAME}
 )
