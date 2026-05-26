@@ -48,7 +48,3 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-humble-realsense2-camera-msgs \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip install --upgrade pip setuptools wheel packaging build scikit-build-core
-# Python requirements
-COPY requirements.txt /tmp/requirements.txt
-RUN pip install -r /tmp/requirements.txt
