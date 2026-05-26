@@ -252,7 +252,6 @@ environments:
       - conda: https://prefix.dev/conda-forge/linux-64/uncrustify-0.83.0-h54a6638_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/urdfdom-4.0.1-h8631160_4.conda
       - conda: https://prefix.dev/conda-forge/linux-64/urdfdom_headers-1.1.2-h84d6215_0.conda
-      - conda: https://prefix.dev/conda-forge/linux-64/warp-lang-1.13.0-cpu_py312h303243a_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/wayland-1.25.0-hd6090a7_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/x264-1!164.3095-h166bdaf_2.tar.bz2
       - conda: https://prefix.dev/conda-forge/linux-64/x265-3.5-h924138e_3.tar.bz2
@@ -343,7 +342,6 @@ environments:
       - conda: https://prefix.dev/conda-forge/noarch/libgcc-devel_linux-64-14.3.0-hf649bbc_119.conda
       - conda: https://prefix.dev/conda-forge/noarch/libstdcxx-devel_linux-64-14.3.0-h9f08a49_119.conda
       - conda: https://prefix.dev/conda-forge/noarch/mccabe-0.7.0-pyhd8ed1ab_1.conda
-      - conda: https://prefix.dev/conda-forge/noarch/newton-1.2.0-pyhcf101f3_0.conda
       - conda: https://prefix.dev/conda-forge/noarch/packaging-26.2-pyhc364b38_0.conda
       - conda: https://prefix.dev/conda-forge/noarch/pluggy-1.6.0-pyhf9edf01_1.conda
       - conda: https://prefix.dev/conda-forge/noarch/pybind11-abi-11-hc364b38_1.conda
@@ -623,7 +621,6 @@ environments:
       - conda: https://prefix.dev/conda-forge/noarch/libcxx-headers-19.1.7-h707e725_2.conda
       - conda: https://prefix.dev/conda-forge/noarch/libgfortran-devel_osx-arm64-14.3.0-hc965647_1.conda
       - conda: https://prefix.dev/conda-forge/noarch/mccabe-0.7.0-pyhd8ed1ab_1.conda
-      - conda: https://prefix.dev/conda-forge/noarch/newton-1.2.0-pyhcf101f3_0.conda
       - conda: https://prefix.dev/conda-forge/noarch/packaging-26.2-pyhc364b38_0.conda
       - conda: https://prefix.dev/conda-forge/noarch/pluggy-1.6.0-pyhf9edf01_1.conda
       - conda: https://prefix.dev/conda-forge/noarch/pybind11-abi-11-hc364b38_1.conda
@@ -859,7 +856,6 @@ environments:
       - conda: https://prefix.dev/conda-forge/osx-arm64/uncrustify-0.83.0-h784d473_0.conda
       - conda: https://prefix.dev/conda-forge/osx-arm64/urdfdom-4.0.1-h0fa9b28_4.conda
       - conda: https://prefix.dev/conda-forge/osx-arm64/urdfdom_headers-1.1.2-h7b3277c_0.conda
-      - conda: https://prefix.dev/conda-forge/osx-arm64/warp-lang-1.13.0-cpu_py312h6588a37_0.conda
       - conda: https://prefix.dev/conda-forge/osx-arm64/x264-1!164.3095-h57fd34a_2.tar.bz2
       - conda: https://prefix.dev/conda-forge/osx-arm64/x265-3.5-hbc6ce65_3.tar.bz2
       - conda: https://prefix.dev/conda-forge/osx-arm64/xorg-libice-1.1.2-h5505292_0.conda
@@ -5135,24 +5131,6 @@ packages:
   run_exports: {}
   size: 19201
   timestamp: 1726152409175
-- conda: https://prefix.dev/conda-forge/linux-64/warp-lang-1.13.0-cpu_py312h303243a_0.conda
-  sha256: d4ec0a59b18738895f309c93702779ee87749ee7e9880642b1ea999e2366ab90
-  md5: 76ca492a6cb0efcb9cd64b4ff37d37ab
-  depends:
-  - python
-  - __glibc >=2.17,<3.0.a0
-  - libgcc >=14
-  - libstdcxx >=14
-  - python_abi 3.12.* *_cp312
-  - numpy >=1.23,<3
-  track_features:
-  - warp-lang-p-0
-  license: Apache-2.0 AND MIT AND CC0-1.0 AND LicenseRef-NvidiaProprietary
-  purls:
-  - pkg:pypi/warp-lang?source=hash-mapping
-  run_exports: {}
-  size: 29361135
-  timestamp: 1778259682875
 - conda: https://prefix.dev/conda-forge/linux-64/wayland-1.25.0-hd6090a7_0.conda
   sha256: ea374d57a8fcda281a0a89af0ee49a2c2e99cc4ac97cf2e2db7064e74e764bdb
   md5: 996583ea9c796e5b915f7d7580b51ea6
@@ -6440,20 +6418,6 @@ packages:
   run_exports: {}
   size: 12934
   timestamp: 1733216573915
-- conda: https://prefix.dev/conda-forge/noarch/newton-1.2.0-pyhcf101f3_0.conda
-  sha256: 6cf832cb92f01144f288ef80c20c8066a61c8f0641596027755d4d0670d7a38d
-  md5: 599ae99816573915a639d63e55498f8f
-  depends:
-  - python >=3.10
-  - warp-lang >=1.13.0
-  - python
-  license: Apache-2.0
-  license_family: APACHE
-  purls:
-  - pkg:pypi/newton?source=hash-mapping
-  run_exports: {}
-  size: 3196318
-  timestamp: 1778664520358
 - conda: https://prefix.dev/conda-forge/noarch/packaging-26.2-pyhc364b38_0.conda
   sha256: 3906abfb6511a3bb309e39b9b1b7bc38f50a723971de2395489fd1f379255890
   md5: 4c06a92e74452cfa53623a81592e8934
@@ -10150,23 +10114,6 @@ packages:
   run_exports: {}
   size: 19265
   timestamp: 1726152487304
-- conda: https://prefix.dev/conda-forge/osx-arm64/warp-lang-1.13.0-cpu_py312h6588a37_0.conda
-  sha256: a0cac808612a326d2b8a2caf1316d32525058eafc68c83ed186feb8cec370254
-  md5: d9cd8a6da38e67c3d7f0033e788f918d
-  depends:
-  - python
-  - __osx >=11.0
-  - libcxx >=19
-  - numpy >=1.23,<3
-  - python_abi 3.12.* *_cp312
-  track_features:
-  - warp-lang-p-0
-  license: Apache-2.0 AND MIT AND CC0-1.0 AND LicenseRef-NvidiaProprietary
-  purls:
-  - pkg:pypi/warp-lang?source=hash-mapping
-  run_exports: {}
-  size: 22700565
-  timestamp: 1778259700168
 - conda: https://prefix.dev/conda-forge/osx-arm64/x264-1!164.3095-h57fd34a_2.tar.bz2
   sha256: debdf60bbcfa6a60201b12a1d53f36736821db281a28223a09e0685edcce105a
   md5: b1f6dccde5d3a1f911960b6e567113ff
