@@ -37,6 +37,7 @@ from builtin_interfaces.msg import Time
 from drdds.msg import ImuData, JointsData, JointsDataCmd, MetaType, ImuDataValue, JointsDataValue, JointData, JointDataCmd
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import TransformStamped, Quaternion, Vector3, Pose, PoseArray
+from rosgraph_msgs.msg import Clock
 from tf2_ros import TransformBroadcaster, StaticTransformBroadcaster
 from rclpy.qos import QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile, QoSReliabilityPolicy
 
@@ -264,6 +265,7 @@ class MuJoCoSimulationNode(Node):
         self.imu_pub = self.create_publisher(ImuData, '/IMU_DATA', 200)
         self.joints_pub = self.create_publisher(JointsData, '/JOINTS_DATA', 200)
         self.odom_pub = self.create_publisher(Odometry, '/odom', 50)
+        self.clock_pub = self.create_publisher(Clock, '/clock', 10)
         waypoint_qos = QoSProfile(
             history=QoSHistoryPolicy.KEEP_LAST,
             depth=1,
@@ -318,6 +320,7 @@ class MuJoCoSimulationNode(Node):
         )
         self.follow_camera_step_interval = max(1, int(round(1.0 / (config.sensors.follow_camera.fps * DT))))
 
+        self._publish_clock(self._make_sim_stamp())
         # Publish all static transforms in one call
         self._publish_static_transforms()
         self._publish_procedural_waypoints()
@@ -374,6 +377,11 @@ class MuJoCoSimulationNode(Node):
         if timestamp is None:
             timestamp = self.timestamp
         return self._stamp_from_seconds(timestamp)
+
+    def _publish_clock(self, stamp: Time):
+        clock_msg = Clock()
+        clock_msg.clock = stamp
+        self.clock_pub.publish(clock_msg)
 
     def _build_waypoint_pose_array(self, scene_meta: dict) -> PoseArray | None:
         mission_xy = scene_meta.get("mission_xy", [])
@@ -485,6 +493,7 @@ class MuJoCoSimulationNode(Node):
                     self.timestamp = step * DT
                     self._update_scene(self.timestamp)
                     stamp = self._make_sim_stamp(self.timestamp)
+                    self._publish_clock(stamp)
 
                     # Keep TF current for exact sensor timestamp lookups.
                     self._publish_odom_and_tf(stamp, publish_odom=False)
