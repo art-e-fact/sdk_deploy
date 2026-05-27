@@ -903,7 +903,7 @@ def _build_railroad_scene_xml(
 def build_railroad_spec(
     lite3_xml_path: str,
     seed: int,
-    n_roads: int = 5,
+    n_roads: int = 1,
     terrain: TerrainSpec | None | object = _TERRAIN_DEFAULT,
     follow_target_start: float = 0.7,
     follow_target_speed: float = 0.25,

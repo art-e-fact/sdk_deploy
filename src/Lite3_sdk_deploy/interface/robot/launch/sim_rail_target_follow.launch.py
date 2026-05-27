@@ -89,6 +89,7 @@ def launch_setup(context, *args, **kwargs):
     simulation_config = _load_simulation_config(simulation_config_path)
     headless = _as_bool(simulation_config.get('headless'), True)
     use_rviz = LaunchConfiguration('use_rviz')
+    use_sim_time = LaunchConfiguration('use_sim_time')
     enable_heightmap = LaunchConfiguration('enable_heightmap')
     enable_heightmap_value = enable_heightmap.perform(context).lower() == 'true'
 
@@ -138,6 +139,7 @@ def launch_setup(context, *args, **kwargs):
                     'cloud_topic': heightmap_cloud_topic,
                     'map_frame': 'odom',
                     'robot_frame': 'base_link',
+                    'use_sim_time': use_sim_time,
                     'resolution': 0.025,
                     'length_x': 8.0,
                     'length_y': 8.0,
@@ -162,6 +164,7 @@ def launch_setup(context, *args, **kwargs):
                     'center_offset_topic': '/rail_detector/center_offset',
                     'tangent_yaw_topic': '/rail_detector/tangent_yaw',
                     'target_distance_topic': '/rail_detector/target_distance',
+                    'use_sim_time': use_sim_time,
                     'track_gauge': 1.067,
                 }],
             )
@@ -178,6 +181,7 @@ def launch_setup(context, *args, **kwargs):
                     'center_offset_topic': '/rail_detector/center_offset',
                     'tangent_yaw_topic': '/rail_detector/tangent_yaw',
                     'target_distance_topic': '/rail_detector/target_distance',
+                    'use_sim_time': use_sim_time,
                     'follow_distance': follow_distance,
                     'min_linear_x': min_linear_x,
                     'max_linear_x': max_linear_x,
@@ -247,6 +251,7 @@ def launch_setup(context, *args, **kwargs):
                 name='rviz2',
                 output='screen',
                 arguments=['-d', rviz_config],
+                parameters=[{'use_sim_time': use_sim_time}],
             )
         )
 
@@ -263,6 +268,11 @@ def generate_launch_description():
             description='Path to the Lite3 simulation YAML config to run',
         ),
         DeclareLaunchArgument('use_rviz', default_value='true'),
+        DeclareLaunchArgument(
+            'use_sim_time',
+            default_value='false',
+            description='Use the simulation clock published on /clock',
+        ),
         DeclareLaunchArgument(
             'enable_heightmap',
             default_value='true',

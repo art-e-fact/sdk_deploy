@@ -25,6 +25,8 @@
   <!-- <exec_depend>realsense2_camera</exec_depend> -->
   <exec_depend>realsense2_camera_msgs</exec_depend>
   <exec_depend>simple_local_heightmap</exec_depend>
+  <exec_depend>joy</exec_depend>
+  <exec_depend>teleop_twist_joy</exec_depend>
 
 
   <test_depend>ament_lint_auto</test_depend>
