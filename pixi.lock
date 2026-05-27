@@ -211,6 +211,7 @@ environments:
       - conda: https://prefix.dev/conda-forge/linux-64/nss-3.118-h445c969_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/numpy-2.4.6-py312h33ff503_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/ocl-icd-2.3.3-hb9d3cd8_0.conda
+      - conda: https://prefix.dev/conda-forge/linux-64/onnxruntime-cpp-1.26.0-hc421db2_0_cpu.conda
       - conda: https://prefix.dev/conda-forge/linux-64/opencl-headers-2025.06.13-hecca717_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/openexr-3.4.12-h9f1635d_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/openh264-2.6.0-hc22cd8d_0.conda
@@ -4321,6 +4322,20 @@ packages:
     - ocl-icd >=2.3.3,<3.0a0
   size: 106742
   timestamp: 1743700382939
+- conda: https://prefix.dev/conda-forge/linux-64/onnxruntime-cpp-1.26.0-hc421db2_0_cpu.conda
+  sha256: 65be67700e4edf644729ba601e9cfe237235d0af702f2882cac3c5d154e7c46e
+  md5: 9b2ee6257b1c6f3d6127f747d0db7b8c
+  depends:
+  - __glibc >=2.17,<3.0.a0
+  - libgcc >=14
+  - libstdcxx >=14
+  license: MIT AND BSL-1.0
+  purls: []
+  run_exports:
+    weak:
+    - onnxruntime-cpp >=1.26.0,<1.26.1.0a0
+  size: 20394553
+  timestamp: 1778966443538
 - conda: https://prefix.dev/conda-forge/linux-64/opencl-headers-2025.06.13-hecca717_0.conda
   sha256: 8de2f0cd8a659b01abf86e7fbb8cea4f28ada62fd288429a2bbc040db1b98dd0
   md5: c930c8052d780caa41216af7de472226
