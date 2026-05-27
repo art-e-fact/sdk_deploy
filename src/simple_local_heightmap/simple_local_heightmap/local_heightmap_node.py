@@ -3,8 +3,8 @@ import math
 import numpy as np
 import rclpy
 import sensor_msgs_py.point_cloud2 as pc2
-from geometry_msgs.msg import PoseWithCovarianceStamped
 from grid_map_msgs.msg import GridMap
+from nav_msgs.msg import Odometry
 from rclpy.node import Node
 from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import Float32MultiArray, Header, MultiArrayDimension
@@ -19,9 +19,7 @@ class LocalHeightmapNode(Node):
         super().__init__('local_heightmap_node')
 
         self.cloud_topic = self.declare_parameter('cloud_topic', '/mid360/points').value
-        self.pose_topic = self.declare_parameter(
-            'pose_with_covariance_topic', '/pose_with_covariance'
-        ).value
+        self.odom_topic = self.declare_parameter('odom_topic', '/odom').value
         self.output_topic = self.declare_parameter('heightmap_topic', '/local_heightmap').value
         self.debug_topic = self.declare_parameter(
             'debug_cloud_topic', '/local_heightmap/debug_points'
@@ -75,9 +73,7 @@ class LocalHeightmapNode(Node):
             MarkerArray, self.front_clear_marker_topic, 10
         )
         self.create_subscription(PointCloud2, self.cloud_topic, self.cloud_callback, 10)
-        self.create_subscription(
-            PoseWithCovarianceStamped, self.pose_topic, self.pose_callback, 10
-        )
+        self.create_subscription(Odometry, self.odom_topic, self.odom_callback, 10)
 
         self.get_logger().info(
             f'Publishing {self.length_x:.2f} x {self.length_y:.2f} m height maps at '
@@ -92,7 +88,7 @@ class LocalHeightmapNode(Node):
                 f'{self.front_clear_marker_topic}'
             )
 
-    def pose_callback(self, msg):
+    def odom_callback(self, msg):
         cov = msg.pose.covariance
         self.latest_pose_variance = max(cov[0], cov[7], cov[35])
 
@@ -123,7 +119,10 @@ class LocalHeightmapNode(Node):
         )
 
         if len(points) != 0:
-            points = self._filter_points(self._transform_points(points, cloud_transform))
+            points = self._filter_points_by_range(points)
+            if len(points) != 0:
+                points = self._transform_points(points, cloud_transform)
+                points = self._filter_points_by_height(points)
             if len(points) != 0:
                 self._fuse_scan(self._rasterize(points), scan_time)
 
@@ -144,14 +143,16 @@ class LocalHeightmapNode(Node):
             return np.column_stack((points['x'], points['y'], points['z'])).astype(np.float32)
         return np.asarray(list(points), dtype=np.float32).reshape(-1, 3)
 
-    def _filter_points(self, points):
+    def _filter_points_by_range(self, points):
         ranges = np.linalg.norm(points, axis=1)
         valid = (
             (ranges >= self.min_range)
             & (ranges <= self.max_range)
-            & (points[:, 2] >= self.min_z)
-            & (points[:, 2] <= self.max_z)
         )
+        return points[valid]
+
+    def _filter_points_by_height(self, points):
+        valid = (points[:, 2] >= self.min_z) & (points[:, 2] <= self.max_z)
         return points[valid]
 
     def _rasterize(self, points):

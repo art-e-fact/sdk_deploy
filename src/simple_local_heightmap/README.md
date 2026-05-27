@@ -13,6 +13,8 @@ the node can apply a shorter timeout inside a rectangle defined in the robot fra
 
 ### Parameters
 
+- `cloud_topic` (`/mid360/points`): `sensor_msgs/PointCloud2` topic used as the heightmap input cloud
+- `odom_topic` (`/odom`): `nav_msgs/Odometry` topic used for pose covariance gating
 - `stale_time_sec` (`1.0`): default timeout used outside the front fast-clear rectangle
 - `front_clear_enabled` (`false`): enables a robot-frame rectangle with a shorter timeout
 - `front_clear_length` (`3.5`): length of the fast-clear rectangle in meters

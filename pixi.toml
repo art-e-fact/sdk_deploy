@@ -42,6 +42,10 @@ ros-jazzy-sensor-msgs-py = ">=5.3.6,<6"
 ros-jazzy-rviz2 = ">=14.1.19,<15"
 ros-jazzy-ros2topic = ">=0.32.8,<0.33"
 ros-jazzy-grid-map-rviz-plugin = ">=2.2.2,<3"
+ros-jazzy-joy = ">=3.3.0,<4"
+ros-jazzy-teleop-twist-joy = ">=2.6.5,<3"
+ros-jazzy-laser-geometry = ">=2.7.2,<3"
+ros-jazzy-image-geometry = ">=4.1.0,<5"
 
 [activation]
 scripts = ["install/setup.sh"]
