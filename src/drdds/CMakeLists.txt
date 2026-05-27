@@ -38,3 +38,11 @@ rosidl_generate_interfaces(${PROJECT_NAME}
 ament_export_dependencies(rosidl_default_runtime)
 ament_package()
 
+# --- macOS post-install workaround ---------------------------------------
+# Symlink the generated typesupport dylibs into
+# $CONDA_PREFIX/lib so dyld's default search finds them.
+# Pathing is different on MacOS
+if(APPLE)
+  install(SCRIPT "${CMAKE_CURRENT_SOURCE_DIR}/cmake/symlink_dylibs_into_conda.cmake")
+endif()
+
