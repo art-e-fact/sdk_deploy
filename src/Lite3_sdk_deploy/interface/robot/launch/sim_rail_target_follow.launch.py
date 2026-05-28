@@ -1,7 +1,12 @@
+import os
+import platform
+import shutil
+
 import yaml
 
+from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, LogInfo, OpaqueFunction
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, LogInfo, OpaqueFunction
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
 from launch_ros.substitutions import FindPackageShare
@@ -24,6 +29,59 @@ def _load_simulation_config(path: str) -> dict:
     except OSError:
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _resolve_simulator_script() -> str:
+    """Locate the installed start_simulation.py inside the lite3_sdk_deploy package."""
+    share_dir = get_package_share_directory('lite3_sdk_deploy')
+    # Installed via `install(PROGRAMS ... DESTINATION lib/${PROJECT_NAME})`,
+    # which lives at <prefix>/lib/lite3_sdk_deploy/start_simulation.py while
+    # the share dir is at <prefix>/share/lite3_sdk_deploy. Walk up to <prefix>.
+    prefix = os.path.dirname(os.path.dirname(share_dir))
+    return os.path.join(prefix, 'lib', 'lite3_sdk_deploy', 'start_simulation.py')
+
+
+def _simulator_action(simulation_config_path: str, headless: bool):
+    """Spawn the simulator.
+
+    On macOS, MuJoCo's interactive viewer (`mujoco.viewer.launch_passive`)
+    must run under the `mjpython` interpreter shipped with the `mujoco`
+    PyPI/conda package, because Apple requires Cocoa UI to live on the
+    main thread. When the simulator is configured headless, the plain
+    Python interpreter works fine and we keep the standard ROS `Node`
+    action so ros2 lifecycle/composition behaves identically to Linux.
+    """
+    needs_mjpython = (platform.system() == 'Darwin') and (not headless)
+    if not needs_mjpython:
+        return Node(
+            package='lite3_sdk_deploy',
+            executable='start_simulation.py',
+            output='screen',
+            arguments=['--config', simulation_config_path],
+        )
+
+    mjpython = shutil.which('mjpython')
+    if mjpython is None:
+        # Fall back with a loud warning; the viewer will fail to open but
+        # at least the user gets a clear hint instead of a cryptic Cocoa
+        # error.
+        return LogInfo(
+            msg=(
+                "[sim_rail_target_follow] WARNING: headless=false on macOS but "
+                "`mjpython` is not on PATH. Install the `mujoco` package "
+                "into the active env (`pixi add mujoco`) or set headless=true "
+                "in your simulation_config YAML."
+            )
+        )
+
+    script = _resolve_simulator_script()
+    return ExecuteProcess(
+        cmd=[mjpython, script, '--config', simulation_config_path],
+        output='screen',
+        # Ensure ros2 Python entrypoints are importable when running under
+        # mjpython rather than via the ROS `Node` action wrapper.
+        additional_env={'PYTHONUNBUFFERED': '1'},
+    )
 
 
 def launch_setup(context, *args, **kwargs):
@@ -67,12 +125,7 @@ def launch_setup(context, *args, **kwargs):
         heightmap_cloud_topic = '/camera/depth/color/points'
 
     actions = [
-        Node(
-            package='lite3_sdk_deploy',
-            executable='start_simulation.py',
-            output='screen',
-            arguments=['--config', simulation_config_path],
-        ),
+        _simulator_action(simulation_config_path, headless),
     ]
 
     if enable_heightmap_value and heightmap_cloud_topic is not None:

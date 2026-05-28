@@ -211,6 +211,7 @@ environments:
       - conda: https://prefix.dev/conda-forge/linux-64/nss-3.118-h445c969_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/numpy-2.4.6-py312h33ff503_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/ocl-icd-2.3.3-hb9d3cd8_0.conda
+      - conda: https://prefix.dev/conda-forge/linux-64/onnxruntime-cpp-1.26.0-hc421db2_0_cpu.conda
       - conda: https://prefix.dev/conda-forge/linux-64/opencl-headers-2025.06.13-hecca717_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/openexr-3.4.12-h9f1635d_0.conda
       - conda: https://prefix.dev/conda-forge/linux-64/openh264-2.6.0-hc22cd8d_0.conda
@@ -822,6 +823,7 @@ environments:
       - conda: https://prefix.dev/conda-forge/osx-arm64/nspr-4.38-heaf21c2_0.conda
       - conda: https://prefix.dev/conda-forge/osx-arm64/nss-3.118-h1c710a3_0.conda
       - conda: https://prefix.dev/conda-forge/osx-arm64/numpy-2.4.6-py312ha003a3f_0.conda
+      - conda: https://prefix.dev/conda-forge/osx-arm64/onnxruntime-cpp-1.26.0-h3a32141_0_cpu.conda
       - conda: https://prefix.dev/conda-forge/osx-arm64/openexr-3.4.12-hef8b857_0.conda
       - conda: https://prefix.dev/conda-forge/osx-arm64/openh264-2.6.0-hb5b2745_0.conda
       - conda: https://prefix.dev/conda-forge/osx-arm64/openjpeg-2.5.4-hd9e9057_0.conda
@@ -4332,6 +4334,20 @@ packages:
     - ocl-icd >=2.3.3,<3.0a0
   size: 106742
   timestamp: 1743700382939
+- conda: https://prefix.dev/conda-forge/linux-64/onnxruntime-cpp-1.26.0-hc421db2_0_cpu.conda
+  sha256: 65be67700e4edf644729ba601e9cfe237235d0af702f2882cac3c5d154e7c46e
+  md5: 9b2ee6257b1c6f3d6127f747d0db7b8c
+  depends:
+  - __glibc >=2.17,<3.0.a0
+  - libgcc >=14
+  - libstdcxx >=14
+  license: MIT AND BSL-1.0
+  purls: []
+  run_exports:
+    weak:
+    - onnxruntime-cpp >=1.26.0,<1.26.1.0a0
+  size: 20394553
+  timestamp: 1778966443538
 - conda: https://prefix.dev/conda-forge/linux-64/opencl-headers-2025.06.13-hecca717_0.conda
   sha256: 8de2f0cd8a659b01abf86e7fbb8cea4f28ada62fd288429a2bbc040db1b98dd0
   md5: c930c8052d780caa41216af7de472226
@@ -9480,6 +9496,19 @@ packages:
     - numpy >=1.23,<3
   size: 6843172
   timestamp: 1779169213435
+- conda: https://prefix.dev/conda-forge/osx-arm64/onnxruntime-cpp-1.26.0-h3a32141_0_cpu.conda
+  sha256: e997a21165d310e94e69868d6a9382808fac11f5d9f4afa77928102e2133986a
+  md5: 6df530e54d546c856c7c0ca8302fdf20
+  depends:
+  - __osx >=11.0
+  - libcxx >=19
+  license: MIT AND BSL-1.0 AND BSD-3-Clause
+  purls: []
+  run_exports:
+    weak:
+    - onnxruntime-cpp >=1.26.0,<1.26.1.0a0
+  size: 16729707
+  timestamp: 1778967934534
 - conda: https://prefix.dev/conda-forge/osx-arm64/openexr-3.4.12-hef8b857_0.conda
   sha256: 27cb33e9ec063d874d6d26df51fe9c04ad78300dc12b8e08dae76fa8e0c4f29d
   md5: ae04e1c9edc8a8045fa57cd3f82b1e6c
