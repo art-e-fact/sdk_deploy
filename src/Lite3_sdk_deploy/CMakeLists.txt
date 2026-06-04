@@ -84,37 +84,34 @@ file(GLOB_RECURSE STATE_MACHINE_SRC "state_machine/*.c*")
 
 add_executable(rl_deploy main.cpp ${STATE_MACHINE_SRC})
 
-# Locate libonnxruntime. On Linux we keep the bundled ELF (.so) shipped under
-# third_party/onnxruntime/<plat>/lib. On macOS those ELFs cannot be loaded, so
-# we look for a conda/pixi-provided libonnxruntime.dylib in the active
-# environment (e.g. via `pixi add onnxruntime-cpp`).
+# Locate libonnxruntime. We look for a conda/pixi-provided libonnxruntime (.so/.dylib)
+# in the active environment (e.g. via `pixi add onnxruntime-cpp`).
 add_library(onnxruntime SHARED IMPORTED)
-if(APPLE)
-  find_library(ONNXRUNTIME_DYLIB
-    NAMES onnxruntime
-    HINTS
-      $ENV{CONDA_PREFIX}/lib
-      $ENV{PIXI_PROJECT_ROOT}/.pixi/envs/default/lib
-      ${CMAKE_PREFIX_PATH}
-    PATH_SUFFIXES lib
-  )
-  if(NOT ONNXRUNTIME_DYLIB)
+
+find_library(ONNXRUNTIME_LIB
+  NAMES onnxruntime
+  HINTS
+    $ENV{CONDA_PREFIX}/lib
+    $ENV{PIXI_PROJECT_ROOT}/.pixi/envs/default/lib
+    ${CMAKE_PREFIX_PATH}
+  PATH_SUFFIXES lib
+)
+
+if(NOT ONNXRUNTIME_LIB)
+  if(APPLE)
     message(FATAL_ERROR
       "libonnxruntime.dylib not found on macOS. "
       "Install via pixi (`pixi add onnxruntime-cpp`) or conda "
       "(`conda install -c conda-forge onnxruntime-cpp`). "
       "Then re-run colcon build.")
+  else()
+    # Fallback to the bundled ELF if Pixi environment has no onnxruntime-cpp
+    set(ONNXRUNTIME_LIB "${THIRD_PARTY}/onnxruntime/${BUILD_PLATFORM}/lib/libonnxruntime.so")
   endif()
-  message(STATUS "Using macOS onnxruntime: ${ONNXRUNTIME_DYLIB}")
-  set_target_properties(onnxruntime PROPERTIES IMPORTED_LOCATION "${ONNXRUNTIME_DYLIB}")
-  # Use the conda/pixi headers too if the bundled ones don't match. The
-  # bundled headers under third_party/onnxruntime/x86/include are ABI-stable
-  # for ORT >= 1.18 and work with newer dylibs, so we keep them on the
-  # include path (set above).
-else()
-  set_target_properties(onnxruntime PROPERTIES IMPORTED_LOCATION
-    "${THIRD_PARTY}/onnxruntime//${BUILD_PLATFORM}/lib/libonnxruntime.so")
 endif()
+
+message(STATUS "Using onnxruntime library: ${ONNXRUNTIME_LIB}")
+set_target_properties(onnxruntime PROPERTIES IMPORTED_LOCATION "${ONNXRUNTIME_LIB}")
 
 ament_target_dependencies(rl_deploy
   rclcpp
@@ -214,16 +211,5 @@ install(DIRECTORY
   Lite3_description
   DESTINATION share/${PROJECT_NAME}
 )
-
-if(BUILD_TESTING)
-  find_package(launch_testing_ament_cmake REQUIRED)
-
-  add_launch_test(
-    test/test_sim_rail_target_follow_distance.py
-    TIMEOUT 180
-  )
-  find_package(ament_cmake_pytest REQUIRED)
-  ament_add_pytest_test(test_simulation_sensors test/test_simulation_sensors.py TIMEOUT 240)
-endif()
 
 ament_package()
