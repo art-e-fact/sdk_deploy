@@ -57,8 +57,8 @@ lego_loam_mo:
         history_keyframe_search_num: 5
         history_keyframe_fitness_score: 0.5
         
-        ground_voxel_size: 1.5 #1.0 #0.6 #0.4 #0.3
-        ground_edge_threshold_num: 50
+        ground_voxel_size: 0.3 #0.05 #1.5 #1.0 #0.6 #0.4 #0.3
+        ground_edge_threshold_num: 50 #5 #50
 
 p2p_move_base:
   ros__parameters:
@@ -123,10 +123,10 @@ mcl_fa:
         
 sub_maps:
   ros__parameters:
-    pose_graph_dir: "/root/dddmr_bags/2026_05_17_20_29_49" #2026_05_18_04_31_28" #2026_05_18_04_11_01" #2026_05_18_03_54_17" #2026_05_17_20_29_49" #2026_05_17_20_17_31" #2026_05_17_20_02_35" #2026_05_17_19_44_00" #2026_05_17_19_30_44" #2026_05_17_18_55_02" #2026_05_17_18_38_59" #"/root/dddmr_bags/2026_05_17_07_51_23"
+    pose_graph_dir: "/root/dddmr_bags/2026_05_30_12_33_00" #2026_05_18_04_11_01" #2026_05_27_14_59_14" #2026_05_27_14_46_23" #2026_05_17_20_29_49" #2026_05_27_13_52_52" #2026_05_17_20_29_49" #2026_05_18_04_31_28" #2026_05_18_04_11_01" #2026_05_18_03_54_17" #2026_05_17_20_29_49" #2026_05_17_20_17_31" #2026_05_17_20_02_35" #2026_05_17_19_44_00" #2026_05_17_19_30_44" #2026_05_17_18_55_02" #2026_05_17_18_38_59" #"/root/dddmr_bags/2026_05_17_07_51_23"
     sub_map_search_radius: 50.0
     sub_map_warmup_trigger_distance: 20.0
-    complete_map_voxel_size: 0.4
+    complete_map_voxel_size: 0.2 #0.4
 mcl_3dl:
   ros__parameters:
     init_x: 0.0

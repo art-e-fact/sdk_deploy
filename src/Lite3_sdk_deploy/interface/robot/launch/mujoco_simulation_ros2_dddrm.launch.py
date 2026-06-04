@@ -65,7 +65,7 @@ def launch_setup(context, *args, **kwargs):
     }
     mujoco_simulation_ros2_args = []
     if xml_path:
-        xml_path = f"src/Lite3_sdk_deploy/Lite3_description/lite3_mjcf/mjcf/{xml_path}"
+        xml_path = f"{lite3_package_share}/Lite3_description/lite3_mjcf/mjcf/{xml_path}"
         mujoco_simulation_ros2_args = ["--xml", xml_path]
 
 
