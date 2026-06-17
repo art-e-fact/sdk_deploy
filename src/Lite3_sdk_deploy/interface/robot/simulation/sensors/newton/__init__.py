@@ -1,1 +1,0 @@
-"""Newton-physics sensor backend."""
