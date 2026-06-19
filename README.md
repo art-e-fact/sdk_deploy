@@ -29,6 +29,15 @@ colcon build --symlink-install --cmake-args -DBUILD_PLATFORM=x86
 source install/setup.bash
 ```
 
+This builds all packages (Lite3 + M20). To build only one:
+```bash
+# Lite3 only (skip M20)
+colcon build --packages-skip m20_sdk_deploy --cmake-args -DBUILD_PLATFORM=x86
+
+# M20 only
+colcon build --packages-up-to m20_sdk_deploy --cmake-args -DBUILD_PLATFORM=x86
+```
+
 Run `colcon build` from a shell with ROS sourced but without the simulation venv activated.
 
 ### Python venv (for simulation only)
@@ -397,3 +406,109 @@ See the [Contributors](Contributors.md) page for a list of contributors.
 M20 SDK部署流程请查看[M20 SDK部署说明](/src/M20_sdk_deploy/README.md)。
 ## 贡献者
 请参阅[贡献者](Contributors.md)页面查看贡献者列表。
+
+
+---
+
+## M20 Sim-to-Sim
+
+### Build
+
+```bash
+cd sdk_deploy
+source /opt/ros/<ros-distro>/setup.bash
+colcon build --packages-up-to m20_sdk_deploy --cmake-args -DBUILD_PLATFORM=x86
+```
+
+### Run (Keyboard Control)
+
+```bash
+# Terminal 1 — MuJoCo simulation
+source /opt/ros/<ros-distro>/setup.zsh
+source install/setup.zsh
+source venv/bin/activate
+python3 src/M20_sdk_deploy/interface/robot/simulation/mujoco_simulation_ros2.py
+
+# Terminal 2 — RL deploy
+source /opt/ros/<ros-distro>/setup.zsh
+source install/setup.zsh
+ros2 run m20_sdk_deploy rl_deploy
+```
+
+#### Keyboard Controls (Terminal 2)
+- z: default position
+- c: RL control mode
+- wasd: forward / leftward / backward / rightward
+- qe: clockwise / counter clockwise
+
+### Run (Twist / cmd_vel Control)
+
+```bash
+# Terminal 1 — MuJoCo simulation
+source /opt/ros/<ros-distro>/setup.zsh
+source install/setup.zsh
+source venv/bin/activate
+python3 src/M20_sdk_deploy/interface/robot/simulation/mujoco_simulation_ros2.py
+
+# Terminal 2 — RL deploy with twist interface (auto stands + enters RL mode after ~5s)
+source /opt/ros/<ros-distro>/setup.zsh
+source install/setup.zsh
+ros2 run m20_sdk_deploy rl_deploy --twist
+
+# Terminal 3 — Send velocity commands
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
+  "{linear: {x: 0.3, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" -r 10
+
+# Or use teleop_twist_keyboard
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
+```
+
+| Twist field    | Robot motion          | Max value |
+|----------------|-----------------------|-----------|
+| `linear.x`    | Forward / backward    | 0.7 m/s   |
+| `linear.y`    | Strafe left / right   | 0.5 m/s   |
+| `angular.z`   | Turn left / right     | 0.7 rad/s |
+
+### Run with Sensors
+
+Pass a `--config` to the simulation to enable sensors:
+
+```bash
+# Mid360 3D lidar
+python3 src/M20_sdk_deploy/interface/robot/simulation/mujoco_simulation_ros2.py \
+  --config src/M20_sdk_deploy/config/simulations/mujoco_mid360.yaml
+
+# 2D lidar
+python3 src/M20_sdk_deploy/interface/robot/simulation/mujoco_simulation_ros2.py \
+  --config src/M20_sdk_deploy/config/simulations/mujoco_lidar.yaml
+
+# RGBD camera
+python3 src/M20_sdk_deploy/interface/robot/simulation/mujoco_simulation_ros2.py \
+  --config src/M20_sdk_deploy/config/simulations/mujoco_rgbd.yaml
+
+# All sensors (RGBD + 2D lidar)
+python3 src/M20_sdk_deploy/interface/robot/simulation/mujoco_simulation_ros2.py \
+  --config src/M20_sdk_deploy/config/simulations/mujoco_rgbd_lidar.yaml
+```
+
+Available sensor configs: `mujoco_default.yaml`, `mujoco_lidar.yaml`, `mujoco_mid360.yaml`, `mujoco_rgbd.yaml`, `mujoco_rgbd_lidar.yaml`
+
+#### Sensor Topics
+
+| Config          | Topic                          | Message type                  |
+|-----------------|--------------------------------|-------------------------------|
+| mid360          | `/mid360/points`               | `sensor_msgs/msg/PointCloud2` |
+| lidar           | `/scan`                        | `sensor_msgs/msg/LaserScan`   |
+| rgbd (depth)    | `/camera/depth/image_rect_raw` | `sensor_msgs/msg/Image`       |
+| rgbd (color)    | `/camera/color/image_raw`      | `sensor_msgs/msg/Image`       |
+| rgbd (points)   | `/camera/depth/color/points`   | `sensor_msgs/msg/PointCloud2` |
+
+### Launch Files
+
+```bash
+# Generic simulation launch
+ros2 launch m20_sdk_deploy simulation.launch.py
+
+# Simulation + twist RL + optional teleop
+ros2 launch m20_sdk_deploy sim_policy_teleop.launch.py
+```

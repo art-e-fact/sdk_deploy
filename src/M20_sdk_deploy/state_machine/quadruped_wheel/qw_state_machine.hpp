@@ -18,6 +18,7 @@
 #include "quadruped_wheel/rl_control_state.hpp"
 #include "quadruped_wheel/liedown_state.hpp"
 #include "keyboard_interface.hpp"
+#include "twist_interface.hpp"
 #include "hardware/m20_interface.hpp"
 #include "udp_server.hpp"
 
@@ -44,12 +45,23 @@ public:
     ~QwStateMachine(){}
 
     void Start(){
+        if(robot_name_ == RobotName::M20){
+            ri_ptr_ = std::make_shared<M20Interface>("M20");
+            cp_ptr_ = std::make_shared<ControlParameters>(robot_name_);
+        }
+
         if(remote_cmd_type_ == RemoteCommandType::kKeyBoard){
             uc_ptr_ = std::make_shared<KeyboardInterface>(robot_name_);
         }else if(remote_cmd_type_ == RemoteCommandType::kGamepad){
             auto gp_ptr = std::make_shared<GamepadInterface>(robot_name_);
             udp_server_ = std::make_shared<UdpServer>(gp_ptr.get());
             uc_ptr_ = gp_ptr;
+        }else if(remote_cmd_type_ == RemoteCommandType::kTwist){
+            if(!ri_ptr_) {
+                std::cerr << "error: RobotInterface must be created before TwistInterface!" << std::endl;
+                exit(1);
+            }
+            uc_ptr_ = std::make_shared<TwistInterface>(robot_name_, ri_ptr_->get_node());
         }else{
             std::cerr << "error user command interface! " << std::endl;
             exit(0);
@@ -57,10 +69,6 @@ public:
         uc_ptr_->SetMotionStateFeedback(&StateBase::msfb_);
 
         if(robot_name_ == RobotName::M20){
-   
-            ri_ptr_ = std::make_shared<M20Interface>("M20");
-            
-            cp_ptr_ = std::make_shared<ControlParameters>(robot_name_);
         }
 
         std::shared_ptr<ControllerData> data_ptr = std::make_shared<ControllerData>();

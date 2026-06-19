@@ -1,0 +1,4 @@
+<mujoco model="M20_stair_scene">
+    <include file="./scene.xml"/>
+    <include file="./stair.xml"/>
+</mujoco>

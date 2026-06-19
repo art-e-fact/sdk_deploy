@@ -45,6 +45,7 @@ endif()
 
 find_package(rclcpp REQUIRED)
 find_package(drdds REQUIRED)
+find_package(geometry_msgs REQUIRED)
 
 set(THIRD_PARTY ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 
@@ -85,6 +86,7 @@ set_target_properties(onnxruntime PROPERTIES IMPORTED_LOCATION "${THIRD_PARTY}/o
 ament_target_dependencies(rl_deploy
   rclcpp
   drdds
+  geometry_msgs
 )
 if(BUILD_PLATFORM STREQUAL "arm")
   target_link_libraries(rl_deploy
@@ -112,6 +114,32 @@ endif()
 
 install(TARGETS rl_deploy
   DESTINATION lib/${PROJECT_NAME}
+)
+
+# Install Python simulation scripts
+install(PROGRAMS
+  interface/robot/simulation/start_simulation.py
+  interface/robot/simulation/mujoco_simulation_ros2.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# Install Python support modules
+install(DIRECTORY
+  interface/robot/simulation/sensors
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+install(FILES
+  interface/robot/simulation/simulation_config.py
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# Install config, description, and launch files to share
+install(DIRECTORY
+  config
+  M20_description
+  interface/robot/launch
+  DESTINATION share/${PROJECT_NAME}
 )
 
 ament_package()
