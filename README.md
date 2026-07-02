@@ -394,13 +394,15 @@ With the default keyboard control: stand the robot with `z`, enter RL control wi
 
 ### Twist Control (/cmd_vel)
 
-To control the M20 with ROS twist messages instead of the keyboard, select the `kTwist` interface in `src/M20_sdk_deploy/main.cpp` and rebuild:
+To control the M20 with ROS twist messages instead of the keyboard, pass the `--twist` flag:
 
-```cpp
-std::shared_ptr<StateMachineBase> fsm = std::make_shared<qw::QwStateMachine>(RobotName::M20, RemoteCommandType::kTwist);
+```bash
+ros2 run m20_sdk_deploy rl_deploy --twist
 ```
 
-The twist interface automatically stands the robot up and enters RL mode after ~5 seconds, then follows `/cmd_vel`:
+The twist interface automatically stands the robot up and enters RL mode after ~5 seconds
+
+Use ros2 twist keyboard with:
 
 ```bash
 ros2 run teleop_twist_keyboard teleop_twist_keyboard
@@ -408,13 +410,12 @@ ros2 run teleop_twist_keyboard teleop_twist_keyboard
 
 ### Simulated LiDARs
 
-The simulation models the M20's two RoboSense 96-line lidars (360° × 90° FOV) mounted front and back at the positions from the hardware spec (±320.28 mm, 0, −13 mm relative to the body frame):
+Lidars are available as per the manual specs at the following ros2 topics
 
 - `/lidar_front/points` (`sensor_msgs/PointCloud2`, frame `lidar_front`)
 - `/lidar_back/points` (`sensor_msgs/PointCloud2`, frame `lidar_back`)
 
 Static transforms from `base_link` to both lidar frames are published on `/tf_static`.
-
 
 ---
 
