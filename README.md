@@ -446,7 +446,7 @@ pixi run ros2 run m20_sdk_deploy rl_deploy --twist
 
 The twist interface automatically stands the robot up and enters RL mode after ~5 seconds. The following commands can be sent (new terminal)
 
-``bash
+```bash
 # Move forward (0.3 m/s)
 ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
   "{linear: {x: 0.3, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" -r 10
