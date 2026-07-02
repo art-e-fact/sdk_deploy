@@ -23,10 +23,24 @@
 
 ### Build
 
+Build everything (Lite3 + M20):
+
 ```bash
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install --cmake-args -DBUILD_PLATFORM=x86
 source install/setup.bash
+```
+
+Build only the M20 stack (and its dependencies):
+
+```bash
+colcon build --symlink-install --packages-up-to m20_sdk_deploy --cmake-args -DBUILD_PLATFORM=x86
+```
+
+Build everything except M20 (Lite3-only):
+
+```bash
+colcon build --symlink-install --packages-skip m20_sdk_deploy --cmake-args -DBUILD_PLATFORM=x86
 ```
 
 Run `colcon build` from a shell with ROS sourced but without the simulation venv activated.
@@ -351,6 +365,55 @@ ros2 launch lite3_sdk_deploy mujoco_simulation_ros2_dddrm.launch.py mode:=1
 
 - `src/Lite3_sdk_deploy/config/mapping_mid360s.yaml`
 - `src/Lite3_sdk_deploy/config/navigation_mid360s.yaml`
+
+
+## M20 (Lynx) Simulation
+
+The M20 wheeled quadruped has its own MuJoCo simulation and RL deploy stack under `src/M20_sdk_deploy`. See the [M20 SDK Deployment Guide](src/M20_sdk_deploy/README.md) for the topic-level architecture.
+
+### Build
+
+```bash
+colcon build --symlink-install --packages-up-to m20_sdk_deploy --cmake-args -DBUILD_PLATFORM=x86
+```
+
+### Run
+
+```bash
+# Terminal 1 — MuJoCo simulation (publishes IMU/joints + dual RoboSense lidar clouds)
+source install/setup.bash
+source venv/bin/activate
+python3 src/M20_sdk_deploy/interface/robot/simulation/mujoco_simulation_ros2.py
+
+# Terminal 2 — RL deploy (state machine + policy)
+source install/setup.bash
+ros2 run m20_sdk_deploy rl_deploy
+```
+
+With the default keyboard control: stand the robot with `z`, enter RL control with `c`, then drive with `w/a/s/d` and rotate with `q/e`.
+
+### Twist Control (/cmd_vel)
+
+To control the M20 with ROS twist messages instead of the keyboard, select the `kTwist` interface in `src/M20_sdk_deploy/main.cpp` and rebuild:
+
+```cpp
+std::shared_ptr<StateMachineBase> fsm = std::make_shared<qw::QwStateMachine>(RobotName::M20, RemoteCommandType::kTwist);
+```
+
+The twist interface automatically stands the robot up and enters RL mode after ~5 seconds, then follows `/cmd_vel`:
+
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
+```
+
+### Simulated LiDARs
+
+The simulation models the M20's two RoboSense 96-line lidars (360° × 90° FOV) mounted front and back at the positions from the hardware spec (±320.28 mm, 0, −13 mm relative to the body frame):
+
+- `/lidar_front/points` (`sensor_msgs/PointCloud2`, frame `lidar_front`)
+- `/lidar_back/points` (`sensor_msgs/PointCloud2`, frame `lidar_back`)
+
+Static transforms from `base_link` to both lidar frames are published on `/tf_static`.
 
 
 ---

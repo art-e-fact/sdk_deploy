@@ -18,6 +18,8 @@ int main(){
     std::shared_ptr<StateMachineBase> fsm = std::make_shared<qw::QwStateMachine>(RobotName::M20, RemoteCommandType::kKeyBoard);
     //Gamepad control
     // std::shared_ptr<StateMachineBase> fsm = std::make_shared<qw::QwStateMachine>(RobotName::M20, RemoteCommandType::kGamepad);
+    //ROS twist (/cmd_vel) control
+    // std::shared_ptr<StateMachineBase> fsm = std::make_shared<qw::QwStateMachine>(RobotName::M20, RemoteCommandType::kTwist);
     
     fsm->Start();
     fsm->Run();

@@ -45,6 +45,7 @@ endif()
 
 find_package(rclcpp REQUIRED)
 find_package(drdds REQUIRED)
+find_package(geometry_msgs REQUIRED)
 
 set(THIRD_PARTY ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 
@@ -85,6 +86,7 @@ set_target_properties(onnxruntime PROPERTIES IMPORTED_LOCATION "${THIRD_PARTY}/o
 ament_target_dependencies(rl_deploy
   rclcpp
   drdds
+  geometry_msgs
 )
 if(BUILD_PLATFORM STREQUAL "arm")
   target_link_libraries(rl_deploy
