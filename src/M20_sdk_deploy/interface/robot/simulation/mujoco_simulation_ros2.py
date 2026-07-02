@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
  * @file mujoco_simulation.py
  * @brief simulation in mujoco
@@ -35,11 +36,21 @@ MODEL_NAME = "M20"
 # Get the directory of the current Python file
 CURRENT_DIR = Path(__file__).resolve().parent
 
-# Define the XML path relative to the Python file
-XML_PATH = CURRENT_DIR / ".." / ".." / ".." / "M20_description" / "m20_mjcf" / "mjcf" / "M20_stair.xml"
 
-# Convert to absolute path as string
-XML_PATH = str(XML_PATH.resolve())
+def _resolve_resource_path(*parts: str) -> str:
+    source_root = CURRENT_DIR / ".." / ".." / ".."
+    install_root = CURRENT_DIR / ".." / ".." / "share" / "m20_sdk_deploy"
+    rel_path = Path(*parts)
+
+    for root in (source_root, install_root):
+        candidate = (root / rel_path).resolve()
+        if candidate.exists():
+            return str(candidate)
+
+    return str((source_root / rel_path).resolve())
+
+# Define the default XML path relative to the Python file
+XML_PATH = _resolve_resource_path("M20_description", "m20_mjcf", "mjcf", "M20_stair.xml")
 USE_VIEWER = True
 DT = 0.001
 RENDER_INTERVAL = 50
