@@ -23,10 +23,24 @@
 
 ### Build
 
+Build everything (Lite3 + M20):
+
 ```bash
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install --cmake-args -DBUILD_PLATFORM=x86
 source install/setup.bash
+```
+
+Build only the M20 stack (and its dependencies):
+
+```bash
+colcon build --symlink-install --packages-up-to m20_sdk_deploy --cmake-args -DBUILD_PLATFORM=x86
+```
+
+Build everything except M20 (Lite3-only):
+
+```bash
+colcon build --symlink-install --packages-skip m20_sdk_deploy --cmake-args -DBUILD_PLATFORM=x86
 ```
 
 Run `colcon build` from a shell with ROS sourced but without the simulation venv activated.
@@ -353,8 +367,105 @@ ros2 launch lite3_sdk_deploy mujoco_simulation_ros2_dddrm.launch.py mode:=1
 - `src/Lite3_sdk_deploy/config/navigation_mid360s.yaml`
 
 
----
+## M20 (Lynx) Simulation
 
+The M20 wheeled quadruped has its own MuJoCo simulation and RL deploy stack under `src/M20_sdk_deploy`. See the [M20 SDK Deployment Guide](src/M20_sdk_deploy/README.md) for the topic-level architecture.
+
+### Build
+
+```bash
+colcon build --symlink-install --packages-up-to m20_sdk_deploy --cmake-args -DBUILD_PLATFORM=x86
+```
+
+### Run
+
+```bash
+# Terminal 1 — MuJoCo simulation (publishes IMU/joints + dual RoboSense lidar clouds)
+source install/setup.bash
+source venv/bin/activate
+python3 src/M20_sdk_deploy/interface/robot/simulation/mujoco_simulation_ros2.py
+
+# Terminal 2 — RL deploy (state machine + policy)
+source install/setup.bash
+ros2 run m20_sdk_deploy rl_deploy
+```
+
+With the default keyboard control: stand the robot with `z`, enter RL control with `c`, then drive with `w/a/s/d` and rotate with `q/e`.
+
+### Twist Control (/cmd_vel)
+
+To control the M20 with ROS twist messages instead of the keyboard, pass the `--twist` flag:
+
+```bash
+ros2 run m20_sdk_deploy rl_deploy --twist
+```
+
+The twist interface automatically stands the robot up and enters RL mode after ~5 seconds
+
+Use ros2 twist keyboard with:
+
+```bash
+ros2 run teleop_twist_keyboard teleop_twist_keyboard
+```
+
+### Simulated LiDARs
+
+Lidars are available as per the manual specs at the following ros2 topics
+
+- `/lidar_front/points` (`sensor_msgs/PointCloud2`, frame `lidar_front`)
+- `/lidar_back/points` (`sensor_msgs/PointCloud2`, frame `lidar_back`)
+
+Static transforms from `base_link` to both lidar frames are published on `/tf_static`.
+
+## M20 Sim on MacOS
+
+Using `pixi` is the easiest way to build this repo.
+```
+pixi run build
+```
+
+Then run the simulator and RL policy with:
+
+```bash
+# Terminal 1 — MuJoCo simulation (publishes IMU/joints + dual RoboSense lidar clouds). Use mjpython interpretor on mac
+pixi run mjpython src/M20_sdk_deploy/interface/robot/simulation/mujoco_simulation_ros2.py
+
+# Terminal 2 — RL deploy (state machine + policy)
+pixi run ros2 run m20_sdk_deploy rl_deploy
+```
+
+With the default keyboard control: stand the robot with `z`, enter RL control with `c`, then drive with `w/a/s/d` and rotate with `q/e`.
+
+### Twist Control (/cmd_vel)
+
+To control the M20 with ROS twist messages instead of the keyboard, pass the `--twist` flag:
+
+```bash
+pixi run ros2 run m20_sdk_deploy rl_deploy --twist
+```
+
+The twist interface automatically stands the robot up and enters RL mode after ~5 seconds. The following commands can be sent (new terminal)
+
+```bash
+# Move forward (0.3 m/s)
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
+  "{linear: {x: 0.3, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" -r 10
+
+# Strafe left (0.3 m/s)
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
+  "{linear: {x: 0.0, y: 0.3, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" -r 10
+
+# Turn left (0.3 rad/s)
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
+  "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.3}}" -r 10
+
+# Stop
+ros2 topic pub /cmd_vel geometry_msgs/msg/Twist \
+  "{linear: {x: 0.0, y: 0.0, z: 0.0}, angular: {x: 0.0, y: 0.0, z: 0.0}}" --once
+```
+
+
+---
 
 ## SDK Overview
 This repository contains the robotics control SDK, currently supporting Lite3 and M20.
