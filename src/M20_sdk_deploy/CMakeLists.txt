@@ -45,7 +45,7 @@ include_directories(
 
 # On macOS we use a conda/pixi
 # provided libonnxruntime.dylib instead of the bundled Linux ELF, and drop
-# Linux-only link flags (-lrt, -levdev). Set BUILD_M20_NATIVE=OFF to skip.
+# Linux-only link flags (-lrt). Set BUILD_M20_NATIVE=OFF to skip.
 option(BUILD_M20_NATIVE "Build the native M20 rl_deploy executable" ON)
 
 if(BUILD_M20_NATIVE)
@@ -139,7 +139,6 @@ else()
     -lrt
     -ldl
     -lstdc++
-    -levdev
   )
 endif()
 
