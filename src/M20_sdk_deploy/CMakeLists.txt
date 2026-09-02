@@ -65,6 +65,7 @@ else()
   set(CMAKE_EXE_LINKER_FLAGS "-Wl,--disable-new-dtags")
   set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+  # Keep vendored dir first: Linux links the bundled ORT 1.22 ELF (see below).
   set(CMAKE_INSTALL_RPATH
     ${THIRD_PARTY}/onnxruntime/${BUILD_PLATFORM}/lib/
     ../lib/onnxruntime/

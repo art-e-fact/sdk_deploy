@@ -74,6 +74,7 @@ else()
   set(CMAKE_EXE_LINKER_FLAGS "-Wl,--enable-new-dtags")
   set(CMAKE_BUILD_WITH_INSTALL_RPATH TRUE)
   set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+  # Vendored dir first: Linux links the bundled ORT ELF (see onnxruntime selection below).
   set(CMAKE_INSTALL_RPATH
     ${THIRD_PARTY}/onnxruntime/${BUILD_PLATFORM}/lib/
     ../lib/onnxruntime/
@@ -84,30 +85,30 @@ file(GLOB_RECURSE STATE_MACHINE_SRC "state_machine/*.c*")
 
 add_executable(rl_deploy main.cpp ${STATE_MACHINE_SRC})
 
-# Locate libonnxruntime. We look for a conda/pixi-provided libonnxruntime (.so/.dylib)
-# in the active environment (e.g. via `pixi add onnxruntime-cpp`).
+# Locate libonnxruntime. On Linux we link the bundled ELF under
+# third_party/onnxruntime/<plat>/lib (matches the runtime RPATH above). On
+# macOS those ELFs cannot be loaded, so we use a conda/pixi-provided
+# libonnxruntime.dylib from the active environment (e.g. `pixi add onnxruntime-cpp`).
 add_library(onnxruntime SHARED IMPORTED)
 
-find_library(ONNXRUNTIME_LIB
-  NAMES onnxruntime
-  HINTS
-    $ENV{CONDA_PREFIX}/lib
-    $ENV{PIXI_PROJECT_ROOT}/.pixi/envs/default/lib
-    ${CMAKE_PREFIX_PATH}
-  PATH_SUFFIXES lib
-)
-
-if(NOT ONNXRUNTIME_LIB)
-  if(APPLE)
+if(APPLE)
+  find_library(ONNXRUNTIME_LIB
+    NAMES onnxruntime
+    HINTS
+      $ENV{CONDA_PREFIX}/lib
+      $ENV{PIXI_PROJECT_ROOT}/.pixi/envs/default/lib
+      ${CMAKE_PREFIX_PATH}
+    PATH_SUFFIXES lib
+  )
+  if(NOT ONNXRUNTIME_LIB)
     message(FATAL_ERROR
       "libonnxruntime.dylib not found on macOS. "
       "Install via pixi (`pixi add onnxruntime-cpp`) or conda "
       "(`conda install -c conda-forge onnxruntime-cpp`). "
       "Then re-run colcon build.")
-  else()
-    # Fallback to the bundled ELF if Pixi environment has no onnxruntime-cpp
-    set(ONNXRUNTIME_LIB "${THIRD_PARTY}/onnxruntime/${BUILD_PLATFORM}/lib/libonnxruntime.so")
   endif()
+else()
+  set(ONNXRUNTIME_LIB "${THIRD_PARTY}/onnxruntime/${BUILD_PLATFORM}/lib/libonnxruntime.so")
 endif()
 
 message(STATUS "Using onnxruntime library: ${ONNXRUNTIME_LIB}")
