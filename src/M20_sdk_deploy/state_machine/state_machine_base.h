@@ -14,10 +14,10 @@
 #include "state_base.h"
 #include "safe_controller.hpp"
 
-#ifndef __linux__
 #include <chrono>
 #include <thread>
-#endif
+
+#include <rclcpp/rclcpp.hpp>
 
 class TimeTool {
 private:
@@ -37,12 +37,26 @@ private:
     bool initialised_{false};
 #endif
 public:
+    // Sim-clock pacing: when the node runs with use_sim_time, ticks follow /clock
+    // instead of the wall timer, so the control rate is fixed in simulated time
+    // whatever the simulator's real-time factor.
+    rclcpp::Clock::SharedPtr sim_clock_;
+    rclcpp::Time sim_next_tick_;
+    rclcpp::Duration sim_period_{0, 0};
+
     timespec system_time; /**< A class for accurately obtaining time.*/
     /**
     * @brief Initialize timer, input cycle(ms).
     * @param Cycle time unit: ms
     */
-    void time_init(int ms) {
+    void time_init(int ms, rclcpp::Clock::SharedPtr clock = nullptr) {
+        if (clock && clock->ros_time_is_active()) {
+            sim_clock_ = clock;
+            sim_period_ = rclcpp::Duration(std::chrono::milliseconds(ms));
+            sim_next_tick_ = clock->now() + sim_period_;
+            printf("timer start (sim clock) ...\n");
+            return;
+        }
 #ifdef __linux__
         tfd = timerfd_create(CLOCK_MONOTONIC, 0);   //创建定时器
         if (tfd == -1) {
@@ -85,6 +99,19 @@ public:
     * @return 1:Enter interrupt 0:no
     */
     int time_interrupt() {
+        if (sim_clock_) {
+            auto now = sim_clock_->now();
+            if (now < sim_next_tick_) {
+                std::this_thread::sleep_for(std::chrono::microseconds(200));
+                return 0;
+            }
+            sim_next_tick_ += sim_period_;
+            // Skip ticks missed across a big /clock jump (e.g. startup) rather than bursting.
+            if (sim_next_tick_ < now) {
+                sim_next_tick_ = now + sim_period_;
+            }
+            return 1;
+        }
 #ifdef __linux__
         fds = epoll_wait(efd, evptr, 1, 10);
         if (evptr[0].events & EPOLLIN) {
@@ -158,7 +185,7 @@ public:
     }
 
     virtual void RunThread() {
-        set_timer.time_init(5);
+        set_timer.time_init(5, ri_ptr_->get_node()->get_clock());
         startTime = set_timer.get_start_time();
 
         while (rclcpp::ok()) {
